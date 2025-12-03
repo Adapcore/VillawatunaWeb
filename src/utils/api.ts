@@ -94,16 +94,139 @@ export interface UmbracoContentResponse {
   total: number;
 }
 
+export interface UmbracoSingleItemResponse extends UmbracoContentItem {}
+
 /**
- * Fetch menu categories from Umbraco Content Delivery API
- * @param parentId - The Umbraco content ID to fetch children from
- * @returns Array of menu category objects with id and name
+ * Fetch root item from Umbraco Content Delivery API
+ * @returns Root content item
  */
-export async function fetchMenuCategoriesFromUmbraco(
-  parentId: string = '68c64598-62f8-4e8a-bd11-efead8d4f23f'
-): Promise<UmbracoContentItem[]> {
+export async function fetchRootItemFromUmbraco(): Promise<UmbracoContentItem | null> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${parentId}`;
+    const apiUrl = 'https://localhost:44343/umbraco/delivery/api/v2/content/item/';
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoSingleItemResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching root item from Umbraco:', error);
+    return null;
+  }
+}
+
+/**
+ * Find menu content type from root item's children
+ * @param rootId - The root item ID to fetch children from
+ * @returns Menu content item or null if not found
+ */
+export async function findMenuContent(rootId: string): Promise<UmbracoContentItem | null> {
+  try {
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${rootId}&sort=sortOrder:asc`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoContentResponse = await response.json();
+    
+    // Find item with contentType "menu"
+    const menuItem = data.items?.find((item) => item.contentType === 'menu');
+    
+    if (menuItem) {
+      console.log(`Found menu content type with ID: ${menuItem.id}`);
+      return menuItem;
+    }
+    
+    console.warn('No menu content type found in root children');
+    return null;
+  } catch (error) {
+    console.error('Error finding menu content:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch menu item by ID to get its properties (like title)
+ * @param menuId - The menu item ID
+ * @returns Menu content item or null if not found
+ */
+export async function fetchMenuContentById(menuId: string): Promise<UmbracoContentItem | null> {
+  try {
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/item/${menuId}`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoSingleItemResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching menu content by ID ${menuId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetch menu content and categories from Umbraco Content Delivery API
+ * Dynamically finds the menu ID from root, then fetches categories
+ * @param parentId - Optional: The Umbraco content ID to fetch children from (if not provided, will auto-detect)
+ * @returns Object containing menu item (with title) and categories array
+ */
+export async function fetchMenuDataFromUmbraco(
+  parentId?: string
+): Promise<{ menuItem: UmbracoContentItem | null; categories: UmbracoContentItem[] }> {
+  try {
+    let menuId = parentId;
+    let menuItem: UmbracoContentItem | null = null;
+    
+    // If parentId not provided, dynamically find it
+    if (!menuId) {
+      // Step 1: Fetch root item
+      const rootItem = await fetchRootItemFromUmbraco();
+      if (!rootItem) {
+        throw new Error('Could not fetch root item from Umbraco');
+      }
+      
+      // Step 2: Find menu content type from root's children
+      const foundMenuItem = await findMenuContent(rootItem.id);
+      if (!foundMenuItem) {
+        throw new Error('Could not find menu content type in root children');
+      }
+      menuId = foundMenuItem.id;
+      
+      // Step 2b: Fetch full menu item details to get all properties (like title)
+      const fullMenuItem = await fetchMenuContentById(menuId);
+      menuItem = fullMenuItem || foundMenuItem; // Use full item if available, otherwise use basic item
+    } else {
+      // If parentId provided, fetch the menu item to get its properties
+      menuItem = await fetchMenuContentById(menuId);
+    }
+    
+    // Step 3: Fetch menu categories using the menu ID (sorted by original Umbraco sort order)
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${menuId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -121,12 +244,25 @@ export async function fetchMenuCategoriesFromUmbraco(
     // Filter for menuCategory content type and return items with id and name
     const categories = data.items?.filter((item) => item.contentType === 'menuCategory') || [];
     
-    return categories;
+    return { menuItem, categories };
   } catch (error) {
-    console.error('Error fetching menu categories from Umbraco:', error);
-    // Fallback to empty array if API fails
-    return [];
+    console.error('Error fetching menu data from Umbraco:', error);
+    // Fallback to empty data if API fails
+    return { menuItem: null, categories: [] };
   }
+}
+
+/**
+ * Fetch menu categories from Umbraco Content Delivery API
+ * Dynamically finds the menu ID from root, then fetches categories
+ * @param parentId - Optional: The Umbraco content ID to fetch children from (if not provided, will auto-detect)
+ * @returns Array of menu category objects with id and name
+ */
+export async function fetchMenuCategoriesFromUmbraco(
+  parentId?: string
+): Promise<UmbracoContentItem[]> {
+  const { categories } = await fetchMenuDataFromUmbraco(parentId);
+  return categories;
 }
 
 /**
@@ -138,7 +274,7 @@ export async function fetchSubcategoriesFromUmbraco(
   categoryId: string
 ): Promise<UmbracoContentItem[]> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${categoryId}`;
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${categoryId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -172,7 +308,7 @@ export async function fetchMenuItemsFromUmbraco(
   subcategoryId: string
 ): Promise<MenuItem[]> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${subcategoryId}`;
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${subcategoryId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -316,4 +452,5 @@ export interface MenuCategory {
   name: string;
   items?: MenuItem[];
   subsections?: MenuSubsection[];
+  openingHoursText?: string;
 }

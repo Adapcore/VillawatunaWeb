@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { fetchMenu, fetchMenuCategoriesFromUmbraco, fetchSubcategoriesFromUmbraco, fetchMenuItemsFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
+import { fetchMenuDataFromUmbraco, fetchSubcategoriesFromUmbraco, fetchMenuItemsFromUmbraco, fetchMenuContentById, type MenuCategory, type MenuItem, type MenuSubsection, type UmbracoContentItem } from '../../utils/api';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 import { MenuItemModal } from '../../components/MenuItemModal';
 
@@ -75,6 +75,8 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
   const [activeCategory, setActiveCategory] = useState<MenuCategory | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [menuTitle, setMenuTitle] = useState<string>('VillaWatuna Restaurant');
+  const [serviceCharge, setServiceCharge] = useState<number | null>(null);
 
   // Helper function to generate slug from category name
   const generateSlug = (name: string): string => {
@@ -84,104 +86,149 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
       .replace(/[^a-z0-9-]/g, '');
   };
 
-  // Category hours information
-  const categoryHours: { [key: string]: string } = {
-    'Beverages': 'Available: All day 8:00 AM - 10:00 PM',
-    'Breakfast': 'Breakfast Hours: 8:00 AM - 11:00 AM daily',
-    'Snacks': 'Snacks Hours: 11:00 AM - 6:00 PM daily',
-    'Starters': 'Available: 12:00 PM - 10:00 PM daily',
-    'Main Course': 'Available: 12:00 PM - 10:00 PM daily',
-    'Seafood': 'Available: 12:00 PM - 10:00 PM daily',
-    'Desserts': 'Available: All day 8:00 AM - 10:00 PM',
-  };
 
   useEffect(() => {
     const loadMenu = async () => {
       try {
-        // Fetch menu categories from Umbraco API (with IDs)
-        const umbracoCategories = await fetchMenuCategoriesFromUmbraco();
+        // Fetch menu data (including menu item with title) and categories from Umbraco API
+        const { menuItem, categories: umbracoCategories } = await fetchMenuDataFromUmbraco();
         
-        // Fetch menu data (items)
-        const menuResponse = await fetchMenu();
-        const categoriesArray = menuResponse.categories || [];
+        // Extract menu title from menu item properties
+        if (menuItem && menuItem.properties?.title) {
+          setMenuTitle(menuItem.properties.title);
+        } else if (menuItem && menuItem.name) {
+          setMenuTitle(menuItem.name);
+        }
         
-        // Map Umbraco category names to menu categories and fetch subcategories
+        // Extract service charge from menu item properties
+        if (menuItem && menuItem.properties?.serviceCharge !== undefined) {
+          setServiceCharge(menuItem.properties.serviceCharge);
+        }
+        
+        // Build categories completely from Umbraco data - no static fallbacks
         let mappedCategories: MenuCategory[] = [];
         
         if (umbracoCategories.length > 0) {
-          // Map Umbraco categories to existing menu data and fetch subcategories
+          // Build categories entirely from Umbraco
           mappedCategories = await Promise.all(
             umbracoCategories.map(async (umbracoCategory, index) => {
-              // Try to find matching category in static data by name
-              const matchingCategory = categoriesArray.find(
-                (cat) => cat.name.toLowerCase() === umbracoCategory.name.toLowerCase()
-              );
+              // Generate unique ID from Umbraco ID to ensure uniqueness
+              const uniqueId = parseInt(umbracoCategory.id.replace(/-/g, '').substring(0, 8), 16) || (index + 1);
               
-              let category: MenuCategory;
-              
-              if (matchingCategory) {
-                category = { ...matchingCategory, name: umbracoCategory.name };
-              } else {
-                // If no match found, use the category at the same index or create a new one
-                const fallbackCategory = categoriesArray[index] || categoriesArray[0];
-                category = { ...fallbackCategory, name: umbracoCategory.name, id: index + 1 };
+              // Fetch full category details to get all properties (including openingHoursText)
+              let fullCategory = umbracoCategory;
+              try {
+                const fetchedCategory = await fetchMenuContentById(umbracoCategory.id);
+                if (fetchedCategory) {
+                  fullCategory = fetchedCategory;
+                }
+              } catch (error) {
+                console.warn(`Could not fetch full details for category ${umbracoCategory.name}, using basic data`);
               }
               
-              // If category has subsections, fetch subcategories from Umbraco and update names and items
-              if (category.subsections && category.subsections.length > 0) {
+              // Fetch subcategories from Umbraco
+              let subsections: MenuSubsection[] = [];
+              let directItems: MenuItem[] = [];
+              
+              try {
                 const umbracoSubcategories = await fetchSubcategoriesFromUmbraco(umbracoCategory.id);
+                console.log(`Fetched ${umbracoSubcategories.length} subcategories for ${umbracoCategory.name}`, umbracoSubcategories);
                 
-                // Map Umbraco subcategories to existing subsections
                 if (umbracoSubcategories.length > 0) {
-                  category.subsections = await Promise.all(
-                    category.subsections.map(async (subsection, subIndex) => {
-                      const umbracoSubcategory = umbracoSubcategories[subIndex];
-                      
-                      if (umbracoSubcategory) {
+                  // Build subsections from Umbraco subcategories
+                  subsections = await Promise.all(
+                    umbracoSubcategories.map(async (umbracoSubcategory, subIndex) => {
+                      try {
                         // Fetch menu items for this subcategory
+                        console.log(`Fetching items for subcategory: ${umbracoSubcategory.name} (ID: ${umbracoSubcategory.id})`);
                         const umbracoItems = await fetchMenuItemsFromUmbraco(umbracoSubcategory.id);
+                        console.log(`Fetched ${umbracoItems.length} items for ${umbracoSubcategory.name}`, umbracoItems);
                         
-                        // Update subsection with Umbraco name and items
                         return {
-                          ...subsection,
+                          id: subIndex + 1,
                           name: umbracoSubcategory.name,
-                          items: umbracoItems.length > 0 ? umbracoItems : subsection.items,
+                          items: umbracoItems, // Only Umbraco items, no fallback
+                        };
+                      } catch (error) {
+                        console.error(`Error fetching items for subcategory ${umbracoSubcategory.name}:`, error);
+                        // Return empty subsection on error - no static fallback
+                        return {
+                          id: subIndex + 1,
+                          name: umbracoSubcategory.name,
+                          items: [], // Empty array on error
                         };
                       }
-                      return subsection;
                     })
                   );
+                } else {
+                  // No subsections - try to fetch direct items
+                  try {
+                    console.log(`No subsections found, fetching direct items for category: ${umbracoCategory.name}`);
+                    directItems = await fetchMenuItemsFromUmbraco(umbracoCategory.id);
+                    console.log(`Fetched ${directItems.length} direct items for ${umbracoCategory.name}`);
+                  } catch (error) {
+                    console.error(`Error fetching direct items for ${umbracoCategory.name}:`, error);
+                    directItems = [];
+                  }
                 }
+              } catch (error) {
+                console.error(`Error fetching subcategories for ${umbracoCategory.name}:`, error);
+                // Try to fetch direct items as fallback
+                try {
+                  directItems = await fetchMenuItemsFromUmbraco(umbracoCategory.id);
+                } catch (itemError) {
+                  console.error(`Error fetching direct items for ${umbracoCategory.name}:`, itemError);
+                  directItems = [];
+                }
+              }
+              
+              // Build category from Umbraco data only
+              const category: MenuCategory = {
+                id: uniqueId,
+                name: fullCategory.name,
+                openingHoursText: fullCategory.properties?.openingHoursText || undefined,
+              };
+              
+              if (subsections.length > 0) {
+                category.subsections = subsections;
+              } else if (directItems.length > 0) {
+                category.items = directItems;
               }
               
               return category;
             })
           );
         } else {
-          // Fallback to static categories if Umbraco API fails
-          mappedCategories = categoriesArray;
+          // If no Umbraco categories found, return empty array - no static fallback
+          console.warn('No Umbraco categories found');
+          mappedCategories = [];
         }
         
         setAllCategories(mappedCategories);
         
         // Set active category based on slug or default to first category
+        // Ensure we only set one active category
         if (categorySlug) {
           const foundCategory = mappedCategories.find((c: MenuCategory) => 
             generateSlug(c.name) === categorySlug
           );
-          setActiveCategory(foundCategory || mappedCategories[0]);
+          if (foundCategory) {
+            setActiveCategory(foundCategory);
+          } else if (mappedCategories.length > 0) {
+            setActiveCategory(mappedCategories[0]);
+          }
         } else {
-          setActiveCategory(mappedCategories[0]);
+          if (mappedCategories.length > 0) {
+            setActiveCategory(mappedCategories[0]);
+          }
         }
         
         setLoading(false);
       } catch (error) {
         console.error('Error loading menu:', error);
-        // Fallback to static menu data
-        const menuResponse = await fetchMenu();
-        const categoriesArray = menuResponse.categories || [];
-        setAllCategories(categoriesArray);
-        setActiveCategory(categoriesArray[0] || null);
+        // No fallback - return empty categories
+        setAllCategories([]);
+        setActiveCategory(null);
         setLoading(false);
       }
     };
@@ -189,9 +236,28 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
     loadMenu();
   }, [categorySlug]);
 
+  // Sync active category with allCategories when categories change (only if activeCategory exists)
+  useEffect(() => {
+    if (activeCategory && allCategories.length > 0) {
+      // Find the exact category from allCategories to ensure we're using the same reference
+      const exactCategory = allCategories.find(
+        (c) => c.id === activeCategory.id && c.name === activeCategory.name
+      );
+      // Only update if we found a match and it's a different object reference
+      if (exactCategory && (exactCategory.id !== activeCategory.id || exactCategory.name !== activeCategory.name)) {
+        setActiveCategory(exactCategory);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCategories.length]);
+
   const handleCategoryChange = (category: MenuCategory) => {
-    setActiveCategory(category);
-    const slug = generateSlug(category.name);
+    // Ensure we're setting the exact category object from allCategories
+    const exactCategory = allCategories.find(
+      (c) => c.id === category.id && c.name === category.name
+    ) || category;
+    setActiveCategory(exactCategory);
+    const slug = generateSlug(exactCategory.name);
     window.history.pushState({}, '', `/menu/${slug}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -234,39 +300,47 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
       <div className="pt-24 pb-16">
         {/* Title */}
         <div className="text-center py-12">
-          <h1 className="text-4xl md:text-5xl text-gray-900 mb-2">VillaWatuna Restaurant</h1>
+          <h1 className="text-4xl md:text-5xl text-gray-900 mb-2">{menuTitle}</h1>
         </div>
 
         {/* Category Tabs */}
         <div className="border-b border-gray-300 sticky top-[128px] bg-white z-40 shadow-sm">
           <div className="container mx-auto px-4">
             <div className="flex flex-wrap justify-center gap-8 pb-4 pt-2">
-              {allCategories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => handleCategoryChange(category)}
-                  className={`relative pb-2 transition-colors ${
-                    activeCategory.id === category.id
-                      ? 'text-gray-900'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {category.name}
-                  {activeCategory.id === category.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#5c2e3e]"></div>
-                  )}
-                </button>
-              ))}
+              {allCategories.map((category) => {
+                // Strict matching: both ID and name must match to avoid duplicate active states
+                const isActive = activeCategory && (
+                  activeCategory.id === category.id && 
+                  activeCategory.name === category.name
+                );
+                return (
+                  <button
+                    key={`${category.id}-${category.name}`}
+                    onClick={() => handleCategoryChange(category)}
+                    className={`relative pb-2 transition-colors ${
+                      isActive
+                        ? 'text-gray-900'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {category.name}
+                    {isActive && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#5c2e3e]"></div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        {/* Menu Items */}
-        <div className="container mx-auto px-4 py-12">
-          {activeCategory.subsections ? (
-            // Render subsections (for Beverages and Breakfast)
-            <>
-              {activeCategory.subsections.map((subsection) => (
+        {/* Menu Items - Only show active category content */}
+        {activeCategory && (
+          <div className="container mx-auto px-4 py-12">
+            {activeCategory.subsections ? (
+              // Render subsections (for Beverages and Breakfast)
+              <>
+                {activeCategory.subsections.map((subsection) => (
                 <div key={subsection.id} className="mb-16">
                   <h2 className="text-[#5c2e3e] mb-8 uppercase tracking-wide">{subsection.name}</h2>
                   <div className={subsection.name.toLowerCase().includes('western') 
@@ -316,11 +390,17 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
               ))}
               
               {/* Category Hours Footer */}
-              {categoryHours[activeCategory.name] && (
+              {(activeCategory.openingHoursText || serviceCharge !== null) && (
                 <div className="mt-12 pt-8 border-t border-gray-200">
                   <div className="bg-[#5c2e3e] text-white px-8 py-6 rounded-lg text-center">
-                    <p className="text-lg mb-2">{categoryHours[activeCategory.name]}</p>
-                    <p className="text-sm opacity-90">(All prices are subject to 10% service charge)</p>
+                    {activeCategory.openingHoursText && (
+                      <p className="text-lg mb-2">{activeCategory.openingHoursText}</p>
+                    )}
+                    {serviceCharge !== null && (
+                      <p className={`text-sm opacity-90 ${activeCategory.openingHoursText ? '' : 'text-lg'}`}>
+                        (All prices are subject to {(serviceCharge * 100).toFixed(0)}% service charge)
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -358,17 +438,24 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
               </div>
               
               {/* Category Hours Footer */}
-              {categoryHours[activeCategory.name] && (
+              {(activeCategory.openingHoursText || serviceCharge !== null) && (
                 <div className="mt-12 pt-8 border-t border-gray-200">
                   <div className="bg-[#5c2e3e] text-white px-8 py-6 rounded-lg text-center">
-                    <p className="text-lg mb-2">{categoryHours[activeCategory.name]}</p>
-                    <p className="text-sm opacity-90">(All prices are subject to 10% service charge)</p>
+                    {activeCategory.openingHoursText && (
+                      <p className="text-lg mb-2">{activeCategory.openingHoursText}</p>
+                    )}
+                    {serviceCharge !== null && (
+                      <p className={`text-sm opacity-90 ${activeCategory.openingHoursText ? '' : 'text-lg'}`}>
+                        (All prices are subject to {(serviceCharge * 100).toFixed(0)}% service charge)
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Menu Item Modal */}
