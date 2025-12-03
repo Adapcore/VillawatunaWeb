@@ -52,6 +52,57 @@ export async function fetchMenu() {
   }
 }
 
+// Umbraco Content Delivery API
+export interface UmbracoContentItem {
+  id: string;
+  name: string;
+  contentType: string;
+  properties?: {
+    [key: string]: any;
+  };
+  url?: string;
+}
+
+export interface UmbracoContentResponse {
+  items: UmbracoContentItem[];
+  total: number;
+}
+
+/**
+ * Fetch menu categories from Umbraco Content Delivery API
+ * @param parentId - The Umbraco content ID to fetch children from
+ * @returns Array of menu category names
+ */
+export async function fetchMenuCategoriesFromUmbraco(
+  parentId: string = '68c64598-62f8-4e8a-bd11-efead8d4f23f'
+): Promise<string[]> {
+  try {
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${parentId}`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoContentResponse = await response.json();
+    
+    // Extract category names from Umbraco response
+    const categoryNames = data.items?.map((item) => item.name) || [];
+    
+    return categoryNames;
+  } catch (error) {
+    console.error('Error fetching menu categories from Umbraco:', error);
+    // Fallback to static categories if API fails
+    return menuData.categories.map((cat) => cat.name);
+  }
+}
+
 // Types
 export interface Room {
   id: number;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { fetchMenu, type MenuCategory, type MenuItem } from '../../utils/api';
+import { fetchMenu, fetchMenuCategoriesFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 import { MenuItemModal } from '../../components/MenuItemModal';
 
@@ -76,25 +76,12 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
 
-  // Map slugs to category names
-  const slugToCategoryName: { [key: string]: string } = {
-    'beverages': 'Beverages',
-    'breakfast': 'Breakfast',
-    'snacks': 'Snacks',
-    'starters': 'Starters',
-    'main-course': 'Main Course',
-    'seafood': 'Seafood',
-    'desserts': 'Desserts',
-  };
-
-  const categoryNameToSlug: { [key: string]: string } = {
-    'Beverages': 'beverages',
-    'Breakfast': 'breakfast',
-    'Snacks': 'snacks',
-    'Starters': 'starters',
-    'Main Course': 'main-course',
-    'Seafood': 'seafood',
-    'Desserts': 'desserts',
+  // Helper function to generate slug from category name
+  const generateSlug = (name: string): string => {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
   };
 
   // Category hours information
@@ -111,22 +98,59 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
   useEffect(() => {
     const loadMenu = async () => {
       try {
+        // Fetch menu categories from Umbraco API
+        const umbracoCategories = await fetchMenuCategoriesFromUmbraco();
+        
+        // Fetch menu data (items)
         const menuResponse = await fetchMenu();
         const categoriesArray = menuResponse.categories || [];
-        setAllCategories(categoriesArray);
+        
+        // Map Umbraco category names to menu categories
+        // If Umbraco returns categories, use them; otherwise use static data
+        let mappedCategories: MenuCategory[] = [];
+        
+        if (umbracoCategories.length > 0) {
+          // Map Umbraco category names to existing menu data
+          mappedCategories = umbracoCategories.map((umbracoName, index) => {
+            // Try to find matching category in static data by name
+            const matchingCategory = categoriesArray.find(
+              (cat) => cat.name.toLowerCase() === umbracoName.toLowerCase()
+            );
+            
+            if (matchingCategory) {
+              // Update the name to match Umbraco
+              return { ...matchingCategory, name: umbracoName };
+            } else {
+              // If no match found, use the category at the same index or create a new one
+              const fallbackCategory = categoriesArray[index] || categoriesArray[0];
+              return { ...fallbackCategory, name: umbracoName, id: index + 1 };
+            }
+          });
+        } else {
+          // Fallback to static categories if Umbraco API fails
+          mappedCategories = categoriesArray;
+        }
+        
+        setAllCategories(mappedCategories);
         
         // Set active category based on slug or default to first category
         if (categorySlug) {
-          const categoryName = slugToCategoryName[categorySlug];
-          const foundCategory = categoriesArray.find((c: MenuCategory) => c.name === categoryName);
-          setActiveCategory(foundCategory || categoriesArray[0]);
+          const foundCategory = mappedCategories.find((c: MenuCategory) => 
+            generateSlug(c.name) === categorySlug
+          );
+          setActiveCategory(foundCategory || mappedCategories[0]);
         } else {
-          setActiveCategory(categoriesArray[0]);
+          setActiveCategory(mappedCategories[0]);
         }
         
         setLoading(false);
       } catch (error) {
         console.error('Error loading menu:', error);
+        // Fallback to static menu data
+        const menuResponse = await fetchMenu();
+        const categoriesArray = menuResponse.categories || [];
+        setAllCategories(categoriesArray);
+        setActiveCategory(categoriesArray[0] || null);
         setLoading(false);
       }
     };
@@ -136,7 +160,7 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
 
   const handleCategoryChange = (category: MenuCategory) => {
     setActiveCategory(category);
-    const slug = categoryNameToSlug[category.name];
+    const slug = generateSlug(category.name);
     window.history.pushState({}, '', `/menu/${slug}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
