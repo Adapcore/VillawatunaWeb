@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { fetchMenu, fetchMenuCategoriesFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
+import { fetchMenu, fetchMenuCategoriesFromUmbraco, fetchSubcategoriesFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 import { MenuItemModal } from '../../components/MenuItemModal';
 
@@ -98,34 +98,55 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
   useEffect(() => {
     const loadMenu = async () => {
       try {
-        // Fetch menu categories from Umbraco API
+        // Fetch menu categories from Umbraco API (with IDs)
         const umbracoCategories = await fetchMenuCategoriesFromUmbraco();
         
         // Fetch menu data (items)
         const menuResponse = await fetchMenu();
         const categoriesArray = menuResponse.categories || [];
         
-        // Map Umbraco category names to menu categories
-        // If Umbraco returns categories, use them; otherwise use static data
+        // Map Umbraco category names to menu categories and fetch subcategories
         let mappedCategories: MenuCategory[] = [];
         
         if (umbracoCategories.length > 0) {
-          // Map Umbraco category names to existing menu data
-          mappedCategories = umbracoCategories.map((umbracoName, index) => {
-            // Try to find matching category in static data by name
-            const matchingCategory = categoriesArray.find(
-              (cat) => cat.name.toLowerCase() === umbracoName.toLowerCase()
-            );
-            
-            if (matchingCategory) {
-              // Update the name to match Umbraco
-              return { ...matchingCategory, name: umbracoName };
-            } else {
-              // If no match found, use the category at the same index or create a new one
-              const fallbackCategory = categoriesArray[index] || categoriesArray[0];
-              return { ...fallbackCategory, name: umbracoName, id: index + 1 };
-            }
-          });
+          // Map Umbraco categories to existing menu data and fetch subcategories
+          mappedCategories = await Promise.all(
+            umbracoCategories.map(async (umbracoCategory, index) => {
+              // Try to find matching category in static data by name
+              const matchingCategory = categoriesArray.find(
+                (cat) => cat.name.toLowerCase() === umbracoCategory.name.toLowerCase()
+              );
+              
+              let category: MenuCategory;
+              
+              if (matchingCategory) {
+                category = { ...matchingCategory, name: umbracoCategory.name };
+              } else {
+                // If no match found, use the category at the same index or create a new one
+                const fallbackCategory = categoriesArray[index] || categoriesArray[0];
+                category = { ...fallbackCategory, name: umbracoCategory.name, id: index + 1 };
+              }
+              
+              // If category has subsections, fetch subcategories from Umbraco and update names
+              if (category.subsections && category.subsections.length > 0) {
+                const umbracoSubcategories = await fetchSubcategoriesFromUmbraco(umbracoCategory.id);
+                
+                // Map Umbraco subcategory names to existing subsections
+                if (umbracoSubcategories.length > 0) {
+                  category.subsections = category.subsections.map((subsection, subIndex) => {
+                    // Use Umbraco subcategory name if available, otherwise keep original
+                    const umbracoSubcategoryName = umbracoSubcategories[subIndex];
+                    if (umbracoSubcategoryName) {
+                      return { ...subsection, name: umbracoSubcategoryName };
+                    }
+                    return subsection;
+                  });
+                }
+              }
+              
+              return category;
+            })
+          );
         } else {
           // Fallback to static categories if Umbraco API fails
           mappedCategories = categoriesArray;
@@ -238,7 +259,7 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
               {activeCategory.subsections.map((subsection) => (
                 <div key={subsection.id} className="mb-16">
                   <h2 className="text-[#5c2e3e] mb-8 uppercase tracking-wide">{subsection.name}</h2>
-                  <div className={subsection.name === 'Western' 
+                  <div className={subsection.name.toLowerCase().includes('western') 
                     ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" 
                     : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"
                   }>

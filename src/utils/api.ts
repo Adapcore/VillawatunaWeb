@@ -71,11 +71,11 @@ export interface UmbracoContentResponse {
 /**
  * Fetch menu categories from Umbraco Content Delivery API
  * @param parentId - The Umbraco content ID to fetch children from
- * @returns Array of menu category names
+ * @returns Array of menu category objects with id and name
  */
 export async function fetchMenuCategoriesFromUmbraco(
   parentId: string = '68c64598-62f8-4e8a-bd11-efead8d4f23f'
-): Promise<string[]> {
+): Promise<UmbracoContentItem[]> {
   try {
     const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${parentId}`;
     
@@ -92,14 +92,50 @@ export async function fetchMenuCategoriesFromUmbraco(
 
     const data: UmbracoContentResponse = await response.json();
     
-    // Extract category names from Umbraco response
-    const categoryNames = data.items?.map((item) => item.name) || [];
+    // Filter for menuCategory content type and return items with id and name
+    const categories = data.items?.filter((item) => item.contentType === 'menuCategory') || [];
     
-    return categoryNames;
+    return categories;
   } catch (error) {
     console.error('Error fetching menu categories from Umbraco:', error);
-    // Fallback to static categories if API fails
-    return menuData.categories.map((cat) => cat.name);
+    // Fallback to empty array if API fails
+    return [];
+  }
+}
+
+/**
+ * Fetch subcategories (menuSubcategory) for a specific category
+ * @param categoryId - The Umbraco category ID to fetch children from
+ * @returns Array of subcategory names
+ */
+export async function fetchSubcategoriesFromUmbraco(
+  categoryId: string
+): Promise<string[]> {
+  try {
+    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${categoryId}`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoContentResponse = await response.json();
+    
+    // Filter for menuSubcategory content type and extract names
+    const subcategoryNames = data.items
+      ?.filter((item) => item.contentType === 'menuSubcategory')
+      .map((item) => item.name) || [];
+    
+    return subcategoryNames;
+  } catch (error) {
+    console.error(`Error fetching subcategories for ${categoryId}:`, error);
+    return [];
   }
 }
 
