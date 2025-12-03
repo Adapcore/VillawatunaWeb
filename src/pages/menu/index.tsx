@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { fetchMenu, fetchMenuCategoriesFromUmbraco, fetchSubcategoriesFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
+import { fetchMenu, fetchMenuCategoriesFromUmbraco, fetchSubcategoriesFromUmbraco, fetchMenuItemsFromUmbraco, type MenuCategory, type MenuItem } from '../../utils/api';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 import { MenuItemModal } from '../../components/MenuItemModal';
 
@@ -127,20 +127,30 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
                 category = { ...fallbackCategory, name: umbracoCategory.name, id: index + 1 };
               }
               
-              // If category has subsections, fetch subcategories from Umbraco and update names
+              // If category has subsections, fetch subcategories from Umbraco and update names and items
               if (category.subsections && category.subsections.length > 0) {
                 const umbracoSubcategories = await fetchSubcategoriesFromUmbraco(umbracoCategory.id);
                 
-                // Map Umbraco subcategory names to existing subsections
+                // Map Umbraco subcategories to existing subsections
                 if (umbracoSubcategories.length > 0) {
-                  category.subsections = category.subsections.map((subsection, subIndex) => {
-                    // Use Umbraco subcategory name if available, otherwise keep original
-                    const umbracoSubcategoryName = umbracoSubcategories[subIndex];
-                    if (umbracoSubcategoryName) {
-                      return { ...subsection, name: umbracoSubcategoryName };
-                    }
-                    return subsection;
-                  });
+                  category.subsections = await Promise.all(
+                    category.subsections.map(async (subsection, subIndex) => {
+                      const umbracoSubcategory = umbracoSubcategories[subIndex];
+                      
+                      if (umbracoSubcategory) {
+                        // Fetch menu items for this subcategory
+                        const umbracoItems = await fetchMenuItemsFromUmbraco(umbracoSubcategory.id);
+                        
+                        // Update subsection with Umbraco name and items
+                        return {
+                          ...subsection,
+                          name: umbracoSubcategory.name,
+                          items: umbracoItems.length > 0 ? umbracoItems : subsection.items,
+                        };
+                      }
+                      return subsection;
+                    })
+                  );
                 }
               }
               
@@ -280,7 +290,13 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
                         <div className="flex items-center gap-3 h-full p-3">
                           <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden bg-[#3a3a3a]">
                             <ImageWithFallback
-                              src={getItemImage(item.image)}
+                              src={
+                                item.image && 
+                                typeof item.image === 'string' && 
+                                (item.image.startsWith('http') || item.image.startsWith('//') || item.image.startsWith('/'))
+                                  ? item.image 
+                                  : getItemImage(item.image || '')
+                              }
                               alt={item.name}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                             />
@@ -321,7 +337,13 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
                     >
                       <div className="relative aspect-square rounded-lg overflow-hidden mb-3 bg-[#3a3a3a]">
                         <ImageWithFallback
-                          src={getItemImage(item.image)}
+                          src={
+                            item.image && 
+                            typeof item.image === 'string' && 
+                            (item.image.startsWith('http') || item.image.startsWith('//') || item.image.startsWith('/'))
+                              ? item.image 
+                              : getItemImage(item.image || '')
+                          }
                           alt={item.name}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                         />
