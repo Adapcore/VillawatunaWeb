@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { fetchMenuDataFromUmbraco, fetchSubcategoriesFromUmbraco, fetchMenuItemsFromUmbraco, fetchMenuContentById, type MenuCategory, type MenuItem, type MenuSubsection, type UmbracoContentItem } from '../../utils/api';
+import { fetchMenuDataFromUmbraco, fetchSubcategoriesFromUmbraco, fetchMenuItemsFromUmbraco, fetchMenuContentById, fetchMenu, type MenuCategory, type MenuItem, type MenuSubsection, type UmbracoContentItem } from '../../utils/api';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 import { MenuItemModal } from '../../components/MenuItemModal';
 
@@ -86,6 +86,32 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
       .replace(/[^a-z0-9-]/g, '');
   };
 
+  // Helper function to check if content has actual text (not just HTML tags or whitespace)
+  // Handles both string format and object format with markup property
+  const hasContent = (content: string | { markup?: string } | undefined): boolean => {
+    if (!content) {
+      return false;
+    }
+    
+    // Extract markup if it's an object
+    let contentString: string | undefined;
+    if (typeof content === 'string') {
+      contentString = content;
+    } else if (typeof content === 'object' && content !== null && 'markup' in content) {
+      contentString = content.markup;
+    } else {
+      return false;
+    }
+    
+    if (!contentString || typeof contentString !== 'string') {
+      return false;
+    }
+    
+    // Strip HTML tags and check if there's actual text content
+    const textContent = contentString.replace(/<[^>]*>/g, '').trim();
+    return textContent.length > 0;
+  };
+
 
   useEffect(() => {
     const loadMenu = async () => {
@@ -108,7 +134,18 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
         // Build categories completely from Umbraco data - no static fallbacks
         let mappedCategories: MenuCategory[] = [];
         
-        if (umbracoCategories.length > 0) {
+        // If Umbraco API returns no categories, fallback to static data
+        if (umbracoCategories.length === 0) {
+          console.warn('No Umbraco categories found, falling back to static menu data');
+          try {
+            const staticMenuData = await fetchMenu();
+            if (staticMenuData && staticMenuData.categories && staticMenuData.categories.length > 0) {
+              mappedCategories = staticMenuData.categories as MenuCategory[];
+            }
+          } catch (fallbackError) {
+            console.error('Error loading static menu fallback:', fallbackError);
+          }
+        } else if (umbracoCategories.length > 0) {
           // Build categories entirely from Umbraco
           mappedCategories = await Promise.all(
             umbracoCategories.map(async (umbracoCategory, index) => {
@@ -198,10 +235,6 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
               return category;
             })
           );
-        } else {
-          // If no Umbraco categories found, return empty array - no static fallback
-          console.warn('No Umbraco categories found');
-          mappedCategories = [];
         }
         
         setAllCategories(mappedCategories);
@@ -226,6 +259,11 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
         setLoading(false);
       } catch (error) {
         console.error('Error loading menu:', error);
+        // Log the full error for debugging
+        if (error instanceof Error) {
+          console.error('Error message:', error.message);
+          console.error('Error stack:', error.stack);
+        }
         // No fallback - return empty categories
         setAllCategories([]);
         setActiveCategory(null);
@@ -351,13 +389,13 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
                       <div
                         key={item.id}
                         onClick={() => {
-                          // Open modal for items with ingredients (Breakfast, Main Course, etc.)
-                          if (item.ingredients) {
+                          // Open modal for items with content (rich text)
+                          if (hasContent(item.ingredients)) {
                             setSelectedItem(item);
                           }
                         }}
                         className={`group bg-white rounded-2xl overflow-hidden hover:bg-gray-50 transition-colors shadow-md border border-gray-100 ${
-                          item.ingredients ? 'cursor-pointer' : ''
+                          hasContent(item.ingredients) ? 'cursor-pointer' : ''
                         }`}
                       >
                         {/* Standard layout for all items */}
@@ -413,7 +451,15 @@ export default function MenuPage({ categorySlug }: MenuPageProps) {
                   {activeCategory.items?.map((item) => (
                     <div
                       key={item.id}
-                      className="group cursor-pointer"
+                      onClick={() => {
+                        // Open modal for items with content (rich text)
+                        if (hasContent(item.ingredients)) {
+                          setSelectedItem(item);
+                        }
+                      }}
+                      className={`group ${
+                        hasContent(item.ingredients) ? 'cursor-pointer' : ''
+                      }`}
                     >
                       <div className="relative aspect-square rounded-lg overflow-hidden mb-3 bg-[#3a3a3a]">
                         <ImageWithFallback

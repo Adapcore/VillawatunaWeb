@@ -372,13 +372,23 @@ export async function fetchMenuItemsFromUmbraco(
         // Based on the code, prices are multiplied by 100 when displayed, so 900 should be stored as 9
         const price = properties.price ? properties.price / 100 : 0;
         
+        // Extract content - handle both string and object formats (Umbraco rich text editor returns object with markup property)
+        let contentValue: string | undefined = undefined;
+        if (properties.content) {
+          if (typeof properties.content === 'string') {
+            contentValue = properties.content;
+          } else if (typeof properties.content === 'object' && properties.content !== null && 'markup' in properties.content) {
+            contentValue = properties.content.markup;
+          }
+        }
+        
         return {
           id: numericId,
           name: properties.title || item.name || '',
           description: properties.description || '',
           price: price,
           image: imageUrl || `menu-item-${index}`,
-          ingredients: properties.content || undefined,
+          ingredients: contentValue,
         };
       });
     
@@ -438,7 +448,7 @@ export interface MenuItem {
   description: string;
   price: number;
   image: string;
-  ingredients?: string;
+  ingredients?: string | { markup?: string; blocks?: any[] };
 }
 
 export interface MenuSubsection {

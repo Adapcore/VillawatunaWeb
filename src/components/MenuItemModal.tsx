@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
+import { ImageWithFallback } from './figma/ImageWithFallback';
 
 interface MenuItemModalProps {
   item: {
@@ -8,7 +9,7 @@ interface MenuItemModalProps {
     description: string;
     price: number;
     image: string;
-    ingredients?: string;
+    ingredients?: string | { markup?: string; blocks?: any[] };
   };
   onClose: () => void;
 }
@@ -42,7 +43,19 @@ export function MenuItemModal({ item, onClose }: MenuItemModalProps) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
-  const imageUrl = imageMap[item.image] || imageMap['breakfast-1'];
+  // Determine image URL - use actual image if it's a URL, otherwise use fallback
+  const getImageUrl = () => {
+    if (item.image && typeof item.image === 'string') {
+      if (item.image.startsWith('http') || item.image.startsWith('//') || item.image.startsWith('/')) {
+        return item.image;
+      }
+      // Fallback to imageMap for placeholder images
+      return imageMap[item.image] || imageMap['breakfast-1'];
+    }
+    return imageMap['breakfast-1'];
+  };
+
+  const imageUrl = getImageUrl();
 
   return (
     <div 
@@ -62,8 +75,8 @@ export function MenuItemModal({ item, onClose }: MenuItemModalProps) {
         </button>
 
         {/* Image */}
-        <div className="w-full h-64 md:h-96 overflow-hidden rounded-t-lg">
-          <img 
+        <div className="w-full h-64 md:h-96 overflow-hidden rounded-t-lg bg-[#3a3a3a]">
+          <ImageWithFallback 
             src={imageUrl} 
             alt={item.name}
             className="w-full h-full object-cover"
@@ -83,54 +96,25 @@ export function MenuItemModal({ item, onClose }: MenuItemModalProps) {
             </div>
           </div>
 
-          {/* Ingredients/How it's made */}
-          {item.ingredients && (
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-[#5c2e3e] mb-3">{item.name === 'Pancake' ? "Your choice" : "What's Included"}</h3>
-              <div className="text-gray-700 leading-relaxed">
-                {item.name === 'Pancake' ? (
-                  // Two-column layout for Pancake options
-                  <div className="grid grid-cols-2 gap-x-6">
-                    {item.ingredients.split('\n').map((option, idx) => (
-                      <div key={idx} className="mb-2">{option}</div>
-                    ))}
-                  </div>
-                ) : (
-                  // Original layout for other items
-                  <>
-                    {item.ingredients.split('\n\n').map((section, idx) => {
-                      // Check if this section should be in a two-column layout
-                      const isEggsOrServed = section.startsWith('Eggs (your choice)') || section.startsWith('Served with:');
-                      const nextSection = item.ingredients?.split('\n\n')[idx + 1];
-                      const nextIsServed = nextSection?.startsWith('Served with:');
-                      
-                      // If this is Eggs section and next is Served section, render them side by side
-                      if (section.startsWith('Eggs (your choice)') && nextIsServed) {
-                        return (
-                          <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                            <div className="whitespace-pre-line">{section}</div>
-                            <div className="whitespace-pre-line">{nextSection}</div>
-                          </div>
-                        );
-                      }
-                      
-                      // Skip the Served section if it was already rendered with Eggs
-                      if (section.startsWith('Served with:') && item.ingredients?.split('\n\n')[idx - 1]?.startsWith('Eggs (your choice)')) {
-                        return null;
-                      }
-                      
-                      // Render other sections normally
-                      return (
-                        <div key={idx} className="whitespace-pre-line mb-4">
-                          {section}
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
+          {/* Content (Rich Text) */}
+          {item.ingredients && (() => {
+            // Extract markup if it's an object, otherwise use string directly
+            let htmlContent: string | undefined;
+            if (typeof item.ingredients === 'string') {
+              htmlContent = item.ingredients;
+            } else if (typeof item.ingredients === 'object' && item.ingredients !== null && 'markup' in item.ingredients) {
+              htmlContent = item.ingredients.markup;
+            }
+            
+            return htmlContent ? (
+              <div className="border-t border-gray-200 pt-6">
+                <div 
+                  className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: htmlContent }}
+                />
               </div>
-            </div>
-          )}
+            ) : null;
+          })()}
         </div>
       </div>
     </div>
