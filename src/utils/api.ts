@@ -4,6 +4,7 @@ import { banquetSpacesData } from '../json/banquet-spaces';
 import { galleryData } from '../json/gallery';
 import { newsData } from '../json/news';
 import { menuData } from '../json/menu';
+import { UMBRACO_API_BASE_URL } from './config';
 
 export async function fetchRooms() {
   try {
@@ -102,7 +103,7 @@ export interface UmbracoSingleItemResponse extends UmbracoContentItem {}
  */
 export async function fetchRootItemFromUmbraco(): Promise<UmbracoContentItem | null> {
   try {
-    const apiUrl = 'https://localhost:44343/umbraco/delivery/api/v2/content/item/';
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/item/`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -130,7 +131,7 @@ export async function fetchRootItemFromUmbraco(): Promise<UmbracoContentItem | n
  */
 export async function findMenuContent(rootId: string): Promise<UmbracoContentItem | null> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${rootId}&sort=sortOrder:asc`;
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/?fetch=children:${rootId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -168,7 +169,7 @@ export async function findMenuContent(rootId: string): Promise<UmbracoContentIte
  */
 export async function fetchMenuContentById(menuId: string): Promise<UmbracoContentItem | null> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/item/${menuId}`;
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/item/${menuId}`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -226,7 +227,7 @@ export async function fetchMenuDataFromUmbraco(
     }
     
     // Step 3: Fetch menu categories using the menu ID (sorted by original Umbraco sort order)
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${menuId}&sort=sortOrder:asc`;
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/?fetch=children:${menuId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -274,7 +275,7 @@ export async function fetchSubcategoriesFromUmbraco(
   categoryId: string
 ): Promise<UmbracoContentItem[]> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${categoryId}&sort=sortOrder:asc`;
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/?fetch=children:${categoryId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -308,7 +309,7 @@ export async function fetchMenuItemsFromUmbraco(
   subcategoryId: string
 ): Promise<MenuItem[]> {
   try {
-    const apiUrl = `https://localhost:44343/umbraco/delivery/api/v2/content/?fetch=children:${subcategoryId}&sort=sortOrder:asc`;
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content/?fetch=children:${subcategoryId}&sort=sortOrder:asc`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -355,8 +356,7 @@ export async function fetchMenuItemsFromUmbraco(
           // Convert relative URLs to absolute URLs if needed
           if (url && !url.startsWith('http') && !url.startsWith('//')) {
             // If it's a relative path, prepend Umbraco base URL
-            const umbracoBase = 'https://localhost:44343';
-            url = url.startsWith('/') ? `${umbracoBase}${url}` : `${umbracoBase}/${url}`;
+            url = url.startsWith('/') ? `${UMBRACO_API_BASE_URL}${url}` : `${UMBRACO_API_BASE_URL}/${url}`;
           }
           
           return url;
