@@ -96,22 +96,45 @@ export function MenuItemModal({ item, onClose }: MenuItemModalProps) {
             </div>
           </div>
 
-          {/* Content (Rich Text) */}
+          {/* Content (Rich Text) - Display exact HTML from Umbraco without modification */}
           {item.ingredients && (() => {
             // Extract markup if it's an object, otherwise use string directly
+            // Preserve exact HTML structure from Umbraco
             let htmlContent: string | undefined;
             if (typeof item.ingredients === 'string') {
+              // Already a string - use directly
               htmlContent = item.ingredients;
-            } else if (typeof item.ingredients === 'object' && item.ingredients !== null && 'markup' in item.ingredients) {
-              htmlContent = item.ingredients.markup;
+            } else if (typeof item.ingredients === 'object' && item.ingredients !== null) {
+              // Object format - extract markup property (exact HTML from Umbraco)
+              if ('markup' in item.ingredients && typeof item.ingredients.markup === 'string') {
+                htmlContent = item.ingredients.markup;
+              }
             }
             
+            // Render exact HTML but force single column layout (override any grid/column layouts from Umbraco)
             return htmlContent ? (
               <div className="border-t border-gray-200 pt-6">
                 <div 
-                  className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                  className="menu-content-wrapper text-gray-700 leading-relaxed [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ul]:list-outside [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_ol]:list-outside [&_li]:mb-1 [&_li]:pl-1 [&_div]:block"
                   dangerouslySetInnerHTML={{ __html: htmlContent }}
                 />
+                <style dangerouslySetInnerHTML={{
+                  __html: `
+                    .menu-content-wrapper div[class*="grid"],
+                    .menu-content-wrapper div[style*="grid"] {
+                      display: block !important;
+                      grid-template-columns: none !important;
+                    }
+                    .menu-content-wrapper div[class*="flex"],
+                    .menu-content-wrapper div[style*="flex"] {
+                      display: block !important;
+                      flex-direction: column !important;
+                    }
+                    .menu-content-wrapper > div {
+                      width: 100% !important;
+                    }
+                  `
+                }} />
               </div>
             ) : null;
           })()}
