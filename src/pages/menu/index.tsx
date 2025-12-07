@@ -1,20 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Header } from "../../components/Header";
 import { Footer } from "../../components/Footer";
-import {
-  fetchMenuFromUmbraco,
-  fetchMenuDataFromUmbraco,
-  fetchSubcategoriesFromUmbraco,
-  fetchMenuItemsFromUmbraco,
-  fetchMenuContentById,
-  fetchMenu,
-  type MenuCategory,
-  type MenuItem,
-  type MenuSubsection,
-  type UmbracoContentItem,
-} from "../../utils/api";
 import { ImageWithFallback } from "../../components/figma/ImageWithFallback";
 import { MenuItemModal } from "../../components/MenuItemModal";
+import { fetchMenuDataFromUmbracoApi, type MenuCategory,type MenuItem} from "../../services/menuService";
 
 interface MenuPageProps {
   categorySlug?: string;
@@ -200,199 +189,33 @@ export default function MenuPage({
     const loadMenu = async () => {
       try {
         // Fetch menu data (including menu item with title) and categories from Umbraco API
-        const menu = await fetchMenuFromUmbraco();
-
-        // Extract menu title from menu item properties
-        if (menu && menu.data?.properties?.title) {
-          setMenuTitle(menu.data?.properties.title);
-        } else if (menu.data && menu.data?.name) {
-          setMenuTitle(menu.data?.name);
+        const menu = await fetchMenuDataFromUmbracoApi();
+        
+        if (menu.title) {
+          setMenuTitle(menu.title);
         }
 
-        // Extract service charge from menu item properties
-        if (
-          menu.data &&
-          menu.data?.properties?.serviceCharge !== undefined
-        ) {
-          setServiceCharge(menu.data?.properties.serviceCharge);
-        }
+        if (menu.serviceCharge !== undefined) {
+          setServiceCharge(menu.serviceCharge);
+        }        
 
-        // Build categories completely from Umbraco data - no static fallbacks
-        let mappedCategories: MenuCategory[] = [];
-
-        // If Umbraco API returns no categories, fallback to static data
-        if (menu.categories.length === 0) {
-          console.warn(
-            "No Umbraco categories found, falling back to static menu data",
-          );
-          try {
-            const staticMenuData = await fetchMenu();
-            if (
-              staticMenuData &&
-              staticMenuData.categories &&
-              staticMenuData.categories.length > 0
-            ) {
-              mappedCategories =
-                staticMenuData.categories as MenuCategory[];
-            }
-          } catch (fallbackError) {
-            console.error(
-              "Error loading static menu fallback:",
-              fallbackError,
-            );
-          }
-        } else if (menu.categories.length > 0) {
-          // Build categories entirely from Umbraco
-          mappedCategories = await Promise.all(
-            menu.categories.map(
-              async (umbracoCategory, index) => {
-                // Generate unique ID from Umbraco ID to ensure uniqueness
-                const uniqueId =
-                  parseInt(
-                    umbracoCategory.id
-                      .replace(/-/g, "")
-                      .substring(0, 8),
-                    16,
-                  ) || index + 1;
-
-                // Fetch full category details to get all properties (including openingHoursText)
-                let fullCategory = umbracoCategory;
-
-                // Fetch subcategories from Umbraco
-                let subsections: MenuSubsection[] = [];
-                let directItems: MenuItem[] = [];
-
-                try {
-                  const umbracoSubcategories =
-                    menu.subcategories.get(
-                      umbracoCategory.route?.path,
-                    ) || []; //await fetchSubcategoriesFromUmbraco(umbracoCategory.id);
-                  console.log(
-                    `Fetched ${umbracoSubcategories.length} subcategories for ${umbracoCategory.name}`,
-                    umbracoSubcategories,
-                  );
-
-                  if (umbracoSubcategories.length > 0) {
-                    // Build subsections from Umbraco subcategories
-                    subsections = await Promise.all(
-                      umbracoSubcategories.map(
-                        async (
-                          umbracoSubcategory,
-                          subIndex,
-                        ) => {
-                          try {
-                            // Fetch menu items for this subcategory
-                            console.log(
-                              `Fetching items for subcategory: ${umbracoSubcategory.name} (ID: ${umbracoSubcategory.id})`,
-                            );
-                            const umbracoItems =
-                              menu.items.get(
-                                umbracoSubcategory.route?.path,
-                              ) || []; //await fetchMenuItemsFromUmbraco(umbracoSubcategory.id);
-                            console.log(
-                              `Fetched ${umbracoItems.length} items for ${umbracoSubcategory.name}`,
-                              umbracoItems,
-                            );
-
-                            return {
-                              id: subIndex + 1,
-                              name: umbracoSubcategory.name,
-                              items: umbracoItems, // Only Umbraco items, no fallback
-                            };
-                          } catch (error) {
-                            console.error(
-                              `Error fetching items for subcategory ${umbracoSubcategory.name}:`,
-                              error,
-                            );
-                            // Return empty subsection on error - no static fallback
-                            return {
-                              id: subIndex + 1,
-                              name: umbracoSubcategory.name,
-                              items: [], // Empty array on error
-                            };
-                          }
-                        },
-                      ),
-                    );
-                  } else {
-                    // No subsections - try to fetch direct items
-                    try {
-                      console.log(
-                        `No subsections found, fetching direct items for category: ${umbracoCategory.name}`,
-                      );
-                      directItems =
-                        await fetchMenuItemsFromUmbraco(
-                          umbracoCategory.id,
-                        );
-                      console.log(
-                        `Fetched ${directItems.length} direct items for ${umbracoCategory.name}`,
-                      );
-                    } catch (error) {
-                      console.error(
-                        `Error fetching direct items for ${umbracoCategory.name}:`,
-                        error,
-                      );
-                      directItems = [];
-                    }
-                  }
-                } catch (error) {
-                  console.error(
-                    `Error fetching subcategories for ${umbracoCategory.name}:`,
-                    error,
-                  );
-                  // Try to fetch direct items as fallback
-                  try {
-                    directItems =
-                      await fetchMenuItemsFromUmbraco(
-                        umbracoCategory.id,
-                      );
-                  } catch (itemError) {
-                    console.error(
-                      `Error fetching direct items for ${umbracoCategory.name}:`,
-                      itemError,
-                    );
-                    directItems = [];
-                  }
-                }
-
-                // Build category from Umbraco data only
-                const category: MenuCategory = {
-                  id: uniqueId,
-                  name: fullCategory.name,
-                  openingHoursText:
-                    fullCategory.properties?.openingHoursText ||
-                    undefined,
-                };
-
-                if (subsections.length > 0) {
-                  category.subsections = subsections;
-                } else if (directItems.length > 0) {
-                  category.items = directItems;
-                }
-
-                return category;
-              },
-            ),
-          );
-        }
-
-        setAllCategories(mappedCategories);
+        setAllCategories(menu.categories);
 
         // Set active category based on slug or default to first category
         // Ensure we only set one active category
         if (categorySlug) {
-          const foundCategory = mappedCategories.find(
+          const foundCategory = menu.categories.find(
             (c: MenuCategory) =>
               generateSlug(c.name) === categorySlug,
           );
           if (foundCategory) {
             setActiveCategory(foundCategory);
-          } else if (mappedCategories.length > 0) {
-            setActiveCategory(mappedCategories[0]);
+          } else if (menu.categories.length > 0) {
+            setActiveCategory(menu.categories[0]);
           }
         } else {
-          if (mappedCategories.length > 0) {
-            setActiveCategory(mappedCategories[0]);
+          if (menu.categories.length > 0) {
+            setActiveCategory(menu.categories[0]);
           }
         }
 
@@ -534,10 +357,10 @@ export default function MenuPage({
             {/* Menu Items - Only show active category content */}
             {activeCategory && (
               <div className="container mx-auto px-4 py-12">
-                {activeCategory.subsections ? (
+                {activeCategory.subCategories ? (
                   // Render subsections (for Beverages and Breakfast)
                   <>
-                    {activeCategory.subsections.map(
+                    {activeCategory.subCategories.map(
                       (subsection) => (
                         <div
                           key={subsection.id}
