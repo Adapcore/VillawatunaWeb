@@ -462,6 +462,10 @@
 }
 
 @layer utilities {
+  .visible {
+    visibility: visible;
+  }
+
   .absolute {
     position: absolute;
   }
@@ -845,6 +849,10 @@
     width: calc(var(--spacing) * 12);
   }
 
+  .w-16 {
+    width: calc(var(--spacing) * 16);
+  }
+
   .w-20 {
     width: calc(var(--spacing) * 20);
   }
@@ -879,6 +887,10 @@
 
   .max-w-6xl {
     max-width: var(--container-6xl);
+  }
+
+  .max-w-none {
+    max-width: none;
   }
 
   .min-w-0 {
@@ -1046,10 +1058,6 @@
 
   .gap-x-4 {
     column-gap: calc(var(--spacing) * 4);
-  }
-
-  .gap-x-6 {
-    column-gap: calc(var(--spacing) * 6);
   }
 
   .gap-y-1 {
@@ -1674,10 +1682,6 @@
 
   .whitespace-nowrap {
     white-space: nowrap;
-  }
-
-  .whitespace-pre-line {
-    white-space: pre-line;
   }
 
   .text-\[\#5c2e3e\] {

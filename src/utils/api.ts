@@ -53,6 +53,144 @@ export async function fetchMenu() {
   }
 }
 
+/**
+ * Fetch menu content and categories from Umbraco Content Delivery API
+ * Dynamically finds the menu ID from root, then fetches categories
+ * @param parentId - Optional: The Umbraco content ID to fetch children from (if not provided, will auto-detect)
+ * @returns Object containing menu item (with title) and categories array
+ */
+export async function fetchMenuFromUmbraco(): Promise<Menu> {
+  try {
+    let menu: Menu = {
+      data: null,
+      categories: [],
+      subcategories: new Map(),
+      items: new Map(),
+    };
+
+    menu.data = await fetchContentByType("menu");    
+    if (!menu.data) {
+      throw new Error('Could not fetch menu content type from Umbraco');
+    }
+
+    const descendantsChildren = await fetchDescendantsChildrenByID(menu.data.id);
+    if (!descendantsChildren) {
+      throw new Error('Could not fetch descendants children from Umbraco');
+    }
+    
+    for (const item of descendantsChildren) {
+      if (item?.contentType) {
+        if (item.contentType === 'menuCategory') {
+          menu.categories.push(item);
+        }
+        else if (item.contentType === 'menuSubcategory') {
+          let path: string | undefined = item.route?.path;
+          // Delete last item from path and assign it
+          if (item.route?.path) {
+            const pathParts = item.route.path.split('/');
+            pathParts.pop();
+            pathParts.pop();
+            path = pathParts.join('/')+'/';
+          }
+          if (menu.subcategories.has(path)) {
+            menu.subcategories.get(path)?.push(item);
+          }
+          else {
+            menu.subcategories.set(path, [item]);
+          }
+        }
+        else if (item.contentType === 'menuItem') {
+          let path: string | undefined = item.route?.path;
+          // Delete last item from path and assign it
+          if (item.route?.path) {
+            const pathParts = item.route.path.split('/');
+            pathParts.pop();
+            pathParts.pop();
+            path = pathParts.join('/')+'/';
+          }
+          if (menu.items.has(path)) {
+            menu.items.get(path)?.push(populateMenuItem(item));
+          }
+          else {
+            menu.items.set(path, [populateMenuItem(item)]);
+          }
+        }
+      }
+    }
+
+    if(menu.categories.length > 0) {
+      menu.categories.sort((a, b) => a.properties?.page - b.properties?.page);
+    }
+    
+    return menu;    
+  } catch (error) {
+    console.error('Error fetching menu data from Umbraco:', error);
+    // Fallback to empty data if API fails
+    return null as unknown as Menu;
+  }
+}
+
+
+/**
+ * Fetch menu items (menuItem) for a specific subcategory
+ * @param subcategoryId - The Umbraco subcategory ID to fetch children from
+ * @returns Array of MenuItem objects mapped from Umbraco data
+ */
+export function populateMenuItem(item: UmbracoContentItem): MenuItem { 
+    // Extract content - handle both string and object formats (Umbraco rich text editor returns object with markup property)
+    let contentValue: string | undefined = undefined;
+    if (item.properties?.content) {
+      if (typeof item.properties?.content === 'string') {
+        contentValue = item.properties?.content;
+      } else if (typeof item.properties?.content === 'object' && item.properties?.content !== null && 'markup' in item.properties?.content) {
+        contentValue = (item.properties?.content as { markup: string }).markup;
+      }
+    }
+
+    const extractImageUrl = (image: string | UmbracoImage | UmbracoImage[] | null | undefined): string => {
+          if (!image) return '';
+          
+          let url = '';
+          
+          // Handle string URL
+          if (typeof image === 'string') {
+            url = image;
+          }
+          // Handle array of images (take first one)
+          else if (Array.isArray(image)) {
+            if (image.length > 0 && image[0].url) {
+              url = image[0].url;
+            }
+          }
+          // Handle single image object
+          else if (typeof image === 'object' && image.url) {
+            url = image.url;
+          }
+          
+          // Convert relative URLs to absolute URLs if needed
+          if (url && !url.startsWith('http') && !url.startsWith('//')) {
+            // If it's a relative path, prepend Umbraco base URL
+            url = url.startsWith('/') ? `${UMBRACO_API_BASE_URL}${url}` : `${UMBRACO_API_BASE_URL}/${url}`;
+          }
+          
+          return url;
+    };
+
+    // Try mainImage first, then images
+    let imageUrl = extractImageUrl(item.properties?.mainImage) || extractImageUrl(item.properties?.images);
+
+    let menuItem: MenuItem = {  
+      id: parseInt(item.id.replace(/-/g, '').substring(0, 8), 16) || 0,
+      name: item.properties?.title || item.name || '',
+      description: item.properties?.description || '',
+      price: item.properties?.price ? item.properties?.price / 100 : 0,
+      image: imageUrl,
+      ingredients: contentValue,
+    };
+
+    return menuItem;
+}
+
 // Umbraco Content Delivery API
 export interface UmbracoImage {
   url?: string;
@@ -71,6 +209,7 @@ export interface UmbracoContentItem {
   name: string;
   contentType: string;
   properties?: {
+    name?: string;
     title?: string;
     description?: string | null;
     mainImage?: string | UmbracoImage | UmbracoImage[] | null;
@@ -88,6 +227,13 @@ export interface UmbracoContentItem {
       path?: string;
     };
   };
+}
+
+export interface Menu {
+  data: UmbracoContentItem | null;
+  categories: UmbracoContentItem[];
+  subcategories: Map<string | undefined, UmbracoContentItem[]>;
+  items: Map<string | undefined, MenuItem[]>;  
 }
 
 export interface UmbracoContentResponse {
@@ -159,6 +305,63 @@ export async function findMenuContent(rootId: string): Promise<UmbracoContentIte
   } catch (error) {
     console.error('Error finding menu content:', error);
     return null;
+  }
+}
+
+/**
+ * Fetch item by type to get its properties (like title)
+ * @param contentType - The type of content to fetch
+ * @returns content item or null if not found
+ */
+export async function fetchContentByType(contentType: string): Promise<UmbracoContentItem | null> {
+  try {
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content?filter=contentType:${contentType}`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: UmbracoSingleItemResponse = (await response.json()).items[0];
+    return data;
+  } catch (error) {
+    console.error(`Error fetching content by ${contentType}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetch menu item by type to get its properties (like title)
+ * @param contentType - The type of content to fetch
+ * @returns content item or null if not found
+ */
+export async function fetchDescendantsChildrenByID(contentId: string): Promise<Array<UmbracoContentItem> | null> {
+  try {
+    const apiUrl = `${UMBRACO_API_BASE_URL}/umbraco/delivery/api/v2/content?fetch=descendants:${contentId}&take=160&sort=level:asc`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Umbraco API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: Array<UmbracoSingleItemResponse> = (await response.json()).items;
+    return data;
+  } 
+  catch (error) {
+    console.error(`Error fetching Descendants Children by ${contentId}:`, error);
+    return [];
   }
 }
 
