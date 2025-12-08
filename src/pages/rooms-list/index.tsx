@@ -3,29 +3,15 @@ import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
 import { Bed, Users, Wifi, ArrowRight } from 'lucide-react';
 import { fetchRooms, type Room } from '../../utils/api';
+import { fetchRoomsDataFromUmbracoApi, type RoomCategory } from '../../services/roomService';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
-
-// Import room images
-import twoBedroomMain from 'figma:asset/34698d3956c98ba238415e83a94fe4015ef18c7a.png';
-import studioMain from 'figma:asset/16b9c369160ee8579831901802a1d7a0eac56ac4.png';
-import superiorMain from 'figma:asset/a9c6149e291b9bd9c958ebc649bf36eae12daa4c.png';
-import deluxeMain from 'figma:asset/2c5532567f860a12f7a4d72eac8307cf5518949b.png';
-import standardMain from 'figma:asset/0e0a73303f94fbcda4f792767963cdc15472a826.png';
-import economyMain from 'figma:asset/a68cf997350d49c0c703169ad9b88ff5905b1cde.png';
 
 export default function RoomsListPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [pageTitle, setPageTitle] = useState<string>('Our Rooms & Suites');
+  const [pageDescription, setPageDescription] = useState<string>('');
+  const [roomCategories, setRoomCategories] = useState<RoomCategory[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Room images mapping
-  const roomImages: { [key: number]: string } = {
-    1: twoBedroomMain,
-    2: studioMain,
-    3: superiorMain,
-    4: deluxeMain,
-    5: standardMain,
-    6: economyMain,
-  };
 
   // Map room names to slugs
   const nameToSlug = (name: string): string => {
@@ -35,8 +21,62 @@ export default function RoomsListPage() {
   useEffect(() => {
     const loadRooms = async () => {
       try {
+        // Load static rooms data
         const data = await fetchRooms();
-        setRooms(data.rooms);
+        console.log('Loaded static rooms:', data.rooms);
+        
+        // Load page title, description, and room categories from Umbraco API
+        try {
+          const roomsPageData = await fetchRoomsDataFromUmbracoApi();
+          console.log('Full Umbraco API response:', roomsPageData);
+          
+          if (roomsPageData.title) {
+            setPageTitle(roomsPageData.title);
+          }
+          if (roomsPageData.description) {
+            setPageDescription(roomsPageData.description);
+          }
+          
+          // Store room categories for display
+          if (roomsPageData.roomCategories && roomsPageData.roomCategories.length > 0) {
+            setRoomCategories(roomsPageData.roomCategories);
+            
+            // Map room categories to rooms by index (assuming same order as static rooms)
+            console.log('Room categories from API:', roomsPageData.roomCategories);
+            console.log('Room categories length:', roomsPageData.roomCategories.length);
+            console.log('Static rooms count:', data.rooms.length);
+            
+            // Update room names with category titles
+            const updatedRooms = data.rooms.map((room, index) => {
+              const category = roomsPageData.roomCategories?.[index];
+              console.log(`Room ${index} (ID: ${room.id}, Name: "${room.name}") -> Category:`, category);
+              
+              if (category && category.title) {
+                console.log(`✓ Updating room ${room.id} name from "${room.name}" to "${category.title}"`);
+                return { ...room, name: category.title };
+              } else {
+                console.log(`✗ No category found for room ${index}, keeping original name: "${room.name}"`);
+              }
+              return room;
+            });
+            
+            console.log('=== ROOM NAME UPDATE SUMMARY ===');
+            console.log('Original room names:', data.rooms.map((r, i) => `${i}: ${r.name}`));
+            console.log('Updated room names:', updatedRooms.map((r, i) => `${i}: ${r.name}`));
+            console.log('===============================');
+            
+            setRooms(updatedRooms);
+          } else {
+            console.warn('No room categories found in API response, using static room names');
+            // No categories found, use static rooms as-is
+            setRooms(data.rooms);
+          }
+        } catch (umbracoError) {
+          console.error('Failed to load page data from Umbraco:', umbracoError);
+          console.error('Error details:', umbracoError);
+          // Keep default values if Umbraco API fails
+          setRooms(data.rooms);
+        }
       } catch (error) {
         console.error('Failed to load rooms:', error);
       } finally {
@@ -74,9 +114,9 @@ export default function RoomsListPage() {
         </div>
         
         <div className="relative z-10 text-center text-white px-4">
-          <h1 className="mb-4">Our Rooms & Suites</h1>
+          <h1 className="mb-4">{pageTitle}</h1>
           <p className="max-w-2xl mx-auto">
-            Discover the perfect accommodation for your stay at VillaWatuna. From luxurious suites to comfortable budget rooms, we have something for everyone.
+            {pageDescription}
           </p>
         </div>
       </div>
@@ -84,41 +124,58 @@ export default function RoomsListPage() {
       {/* Rooms Grid */}
       <div className="container mx-auto px-4 py-16">
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {rooms.map((room) => (
-            <div
-              key={room.id}
-              className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
-            >
-              {/* Room Image */}
-              <div className="relative h-64 overflow-hidden">
-                <ImageWithFallback
-                  src={roomImages[room.id]}
-                  alt={room.name}
-                  className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                />
-              </div>
+          {/* Display room categories using the same template */}
+          {roomCategories.length > 0 ? (
+            roomCategories.map((category, index) => {
+              // Find corresponding room data by index, or use fallback
+              const room = rooms[index] || {
+                id: index + 1,
+                name: category.title,
+                price: 0,
+                image: '',
+                rating: 5,
+                description: '',
+                images: [],
+                accessories: [],
+                facilities: [],
+                keyAmenities: []
+              };
+              
+              return (
+                <div
+                  key={category.id || index}
+                  className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+                >
+                  {/* Room Image */}
+                  <div className="relative h-64 overflow-hidden">
+                    <ImageWithFallback
+                      src={category.mainImage || ''}
+                      alt={category.title}
+                      className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
+                    />
+                  </div>
 
-              {/* Room Content */}
-              <div className="p-6">
-                <h3 className="text-2xl mb-3 text-[#5c2e3e]">{room.name}</h3>
-                <p className="text-gray-600 mb-4 line-clamp-2">{room.description}</p>
+                  {/* Room Content */}
+                  <div className="p-6">
+                    <h3 className="text-2xl mb-3 text-[#5c2e3e]">{category.title}</h3>
+                <p className="text-gray-600 mb-4 line-clamp-2">{category.description || ''}</p>
 
                 {/* Room Info */}
                 <div className="flex flex-wrap gap-4 mb-6 text-sm text-gray-600">
-                  {room.size && (
+                  {(category.size && String(category.size).trim() !== '') && (
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-[#5c2e3e]/10 flex items-center justify-center">
                         <Bed size={16} className="text-[#5c2e3e]" />
                       </div>
-                      <span>{room.size}</span>
+                      <span>{String(category.size)}</span>
                     </div>
                   )}
-                  {room.guests && (
+                  {(category.capacity && String(category.capacity).trim() !== '') && (
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-[#5c2e3e]/10 flex items-center justify-center">
                         <Users size={16} className="text-[#5c2e3e]" />
                       </div>
-                      <span>{room.guests}</span>
+                      <span>{String(category.capacity)}</span>
                     </div>
                   )}
                   <div className="flex items-center gap-2">
@@ -129,38 +186,111 @@ export default function RoomsListPage() {
                   </div>
                 </div>
 
-                {/* Key Amenities */}
-                {room.keyAmenities && room.keyAmenities.length > 0 && (
-                  <div className="mb-6">
-                    <div className="flex flex-wrap gap-2">
-                      {room.keyAmenities.slice(0, 3).map((amenity, index) => (
-                        <span
-                          key={index}
-                          className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full"
-                        >
-                          {amenity}
-                        </span>
-                      ))}
-                      {room.keyAmenities.length > 3 && (
-                        <span className="text-xs text-gray-500 px-3 py-1">
-                          +{room.keyAmenities.length - 3} more
-                        </span>
-                      )}
+                    {/* Key Amenities */}
+                    {room.keyAmenities && room.keyAmenities.length > 0 && (
+                      <div className="mb-6">
+                        <div className="flex flex-wrap gap-2">
+                          {room.keyAmenities.slice(0, 3).map((amenity, amenityIndex) => (
+                            <span
+                              key={amenityIndex}
+                              className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full"
+                            >
+                              {amenity}
+                            </span>
+                          ))}
+                          {room.keyAmenities.length > 3 && (
+                            <span className="text-xs text-gray-500 px-3 py-1">
+                              +{room.keyAmenities.length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* View Details Button */}
+                    <a
+                      href={`/rooms/${nameToSlug(category.title)}`}
+                      className="flex items-center justify-center gap-2 w-full bg-[#5c2e3e] text-white py-3 rounded-lg hover:bg-[#7d3d52] transition-colors group"
+                    >
+                      <span>View Details</span>
+                      <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    </a>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            // Fallback to static rooms if no categories
+            rooms.map((room) => (
+              <div
+                key={room.id}
+                className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+              >
+                      {/* Room Image */}
+                      <div className="relative h-64 overflow-hidden">
+                        <ImageWithFallback
+                          src={room.image || ''}
+                          alt={room.name}
+                          className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
+                        />
+                      </div>
+
+                {/* Room Content */}
+                <div className="p-6">
+                  <h3 className="text-2xl mb-3 text-[#5c2e3e]">{room.name}</h3>
+                  <p className="text-gray-600 mb-4 line-clamp-2"></p>
+
+                  {/* Room Info */}
+                  <div className="flex flex-wrap gap-4 mb-6 text-sm text-gray-600">
+                    {room.size && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-[#5c2e3e]/10 flex items-center justify-center">
+                          <Bed size={16} className="text-[#5c2e3e]" />
+                        </div>
+                        <span>{room.size}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-[#5c2e3e]/10 flex items-center justify-center">
+                        <Wifi size={16} className="text-[#5c2e3e]" />
+                      </div>
+                      <span>Free WiFi</span>
                     </div>
                   </div>
-                )}
 
-                {/* View Details Button */}
-                <a
-                  href={`/rooms/${nameToSlug(room.name)}`}
-                  className="flex items-center justify-center gap-2 w-full bg-[#5c2e3e] text-white py-3 rounded-lg hover:bg-[#7d3d52] transition-colors group"
-                >
-                  <span>View Details</span>
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </a>
+                  {/* Key Amenities */}
+                  {room.keyAmenities && room.keyAmenities.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex flex-wrap gap-2">
+                        {room.keyAmenities.slice(0, 3).map((amenity, index) => (
+                          <span
+                            key={index}
+                            className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                        {room.keyAmenities.length > 3 && (
+                          <span className="text-xs text-gray-500 px-3 py-1">
+                            +{room.keyAmenities.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* View Details Button */}
+                  <a
+                    href={`/rooms/${nameToSlug(room.name)}`}
+                    className="flex items-center justify-center gap-2 w-full bg-[#5c2e3e] text-white py-3 rounded-lg hover:bg-[#7d3d52] transition-colors group"
+                  >
+                    <span>View Details</span>
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  </a>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 

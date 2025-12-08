@@ -8,5 +8,6 @@
  * The base URL should include the protocol (http/https) and domain,
  * but NOT the /umbraco/delivery/api/v2 path (that's added automatically)
  */
-export const UMBRACO_API_BASE_URL = 'https://internal.villawatuna.com';/*'https://localhost:44343';*/
+/*export const UMBRACO_API_BASE_URL = 'https://internal.villawatuna.com';*/
+export const UMBRACO_API_BASE_URL = 'https://localhost:44343';
 
