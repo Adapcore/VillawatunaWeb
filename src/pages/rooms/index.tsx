@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
-import { Bed, Users, Wifi, Maximize2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { fetchRooms, type Room } from '../../utils/api';
+import { Bed, Users, Maximize2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { fetchRoomsDataFromUmbracoApi, type Room, type RoomCategory } from '../../services/roomService';
 import Slider from 'react-slick';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
 
@@ -79,15 +79,58 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
     'economy-room': 'Economy Room',
   };
 
-  useEffect(() => {
+   nbhuseEffect(() => {
     const loadRooms = async () => {
       try {
-        const roomsResponse = await fetchRooms();
-        const roomsArray = roomsResponse.rooms || [];
-        setAllRooms(roomsArray);
+        // Load rooms from Umbraco API
+        const roomsPageData = await fetchRoomsDataFromUmbracoApi();
         
-        const roomName = slugToRoomName[roomSlug];
-        const foundRoom = roomsArray.find((r: Room) => r.name === roomName);
+        console.log('Full Umbraco API response:', roomsPageData);
+        console.log('Room categories:', roomsPageData.roomCategories);
+        console.log('Rooms:', roomsPageData.rooms);
+        
+        // Convert roomCategories to Room objects for display
+        // Merge category info with detailed room data from child room items
+        const roomsFromCategories: Room[] = (roomsPageData.roomCategories || []).map((category, index) => {
+          const roomData = category.roomData;
+          
+          return {
+            id: index + 1,
+            name: category.title,
+            price: roomData?.price || 0,
+            image: category.mainImage || roomData?.image || '',
+            rating: roomData?.rating || 5,
+            description: category.description || roomData?.description || '',
+            size: category.size || roomData?.size,
+            guests: category.capacity || roomData?.guests,
+            bedrooms: roomData?.bedrooms,
+            keyAmenities: roomData?.keyAmenities || [],
+            images: roomData?.images?.length ? roomData.images : (category.mainImage ? [category.mainImage] : []),
+            accessories: roomData?.accessories || [],
+            facilities: roomData?.facilities || [],
+            slug: roomData?.slug || category.title.toLowerCase().replace(/\s+/g, '-')
+          };
+        });
+        
+        // Combine with actual room items from API
+        const allRoomsData = [...roomsFromCategories, ...(roomsPageData.rooms || [])];
+        
+        console.log('Combined rooms data:', allRoomsData);
+        setAllRooms(allRoomsData);
+        
+        // Find room by slug (preferred) or fallback to name matching
+        const foundRoom = allRoomsData.find((r: Room) => {
+          const roomSlugNormalized = r.slug || r.name.toLowerCase().replace(/\s+/g, '-');
+          console.log(`Comparing: "${roomSlugNormalized}" === "${roomSlug}"`);
+          return roomSlugNormalized === roomSlug;
+        }) || (() => {
+          // Fallback: try matching by name using slugToRoomName mapping
+          const roomName = slugToRoomName[roomSlug];
+          console.log('Fallback: Looking for room name:', roomName);
+          return roomName ? allRoomsData.find((r: Room) => r.name === roomName) : undefined;
+        })();
+        
+        console.log('Found room:', foundRoom);
         
         if (foundRoom) {
           setRoom(foundRoom);
@@ -132,15 +175,18 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
     );
   }
 
-  const imageUrls = roomDetailImages[room.id] || [];
+  // Use images from API first, fallback to hardcoded images
+  const imageUrls = (room.images && room.images.length > 0) 
+    ? room.images 
+    : (roomDetailImages[room.id] || [room.image].filter(Boolean));
 
   const sliderSettings = {
     dots: true,
-    infinite: true,
+    infinite: imageUrls.length > 1,
     speed: 500,
     slidesToShow: 1,
     slidesToScroll: 1,
-    autoplay: true,
+    autoplay: imageUrls.length > 1,
     autoplaySpeed: 4000,
     nextArrow: <NextArrow />,
     prevArrow: <PrevArrow />,
@@ -162,20 +208,26 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
       {/* Image Carousel Section */}
       <div className="pt-24">
         <div className="relative bg-black">
-          <Slider {...sliderSettings}>
-            {imageUrls.map((imageUrl, index) => (
-              <div key={index}>
-                <div className="relative h-[60vh] md:h-[70vh]">
-                  <ImageWithFallback
-                    src={imageUrl}
-                    alt={`${room.name} - Image ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+          {imageUrls.length > 0 ? (
+            <Slider {...sliderSettings}>
+              {imageUrls.map((imageUrl, index) => (
+                <div key={index}>
+                  <div className="relative h-[60vh] md:h-[70vh]">
+                    <ImageWithFallback
+                      src={imageUrl}
+                      alt={`${room.name} - Image ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </Slider>
+              ))}
+            </Slider>
+          ) : (
+            <div className="relative h-[60vh] md:h-[70vh] bg-gray-800 flex items-center justify-center">
+              <p className="text-white text-lg">No images available</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -243,42 +295,48 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
             )}
 
             {/* Accessories */}
-            <div className="mb-8">
-              <h3 className="mb-4 text-[#5c2e3e]">Room Accessories</h3>
-              <div className="grid md:grid-cols-2 gap-3">
-                {room.accessories.map((accessory, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
-                    <CheckCircle className="w-5 h-5 text-teal-600 flex-shrink-0" />
-                    <span className="text-gray-700">{accessory}</span>
-                  </div>
-                ))}
+            {room.accessories && room.accessories.length > 0 && (
+              <div className="mb-8">
+                <h3 className="mb-4 text-[#5c2e3e]">Room Accessories</h3>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {room.accessories.map((accessory, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
+                      <CheckCircle className="w-5 h-5 text-teal-600 flex-shrink-0" />
+                      <span className="text-gray-700">{accessory}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Facilities */}
-            <div className="mb-8">
-              <h3 className="mb-4 text-[#5c2e3e]">Facilities & Amenities</h3>
-              <div className="grid md:grid-cols-2 gap-3">
-                {room.facilities.map((facility, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
-                    <CheckCircle className="w-5 h-5 text-[#5c2e3e] flex-shrink-0" />
-                    <span className="text-gray-700">{facility}</span>
-                  </div>
-                ))}
+            {room.facilities && room.facilities.length > 0 && (
+              <div className="mb-8">
+                <h3 className="mb-4 text-[#5c2e3e]">Facilities & Amenities</h3>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {room.facilities.map((facility, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
+                      <CheckCircle className="w-5 h-5 text-[#5c2e3e] flex-shrink-0" />
+                      <span className="text-gray-700">{facility}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Key Amenities */}
-            <div className="mb-8">
-              <h3 className="mb-4 text-[#5c2e3e]">Key Amenities</h3>
-              <div className="flex flex-wrap gap-3">
-                {room.keyAmenities.map((amenity, index) => (
-                  <div key={index} className="px-4 py-2 bg-[#5c2e3e] text-white rounded-full">
-                    {amenity}
-                  </div>
-                ))}
+            {/* Key Amenities - Loaded from roomAccessories property */}
+            {room.keyAmenities && room.keyAmenities.length > 0 && (
+              <div className="mb-8">
+                <h3 className="mb-4 text-[#5c2e3e]">Key Amenities</h3>
+                <div className="flex flex-wrap gap-3">
+                  {room.keyAmenities.map((amenity, index) => (
+                    <div key={index} className="px-4 py-2 bg-[#5c2e3e] text-white rounded-full">
+                      {amenity}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Sidebar - Booking Card */}
@@ -336,9 +394,12 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
           <h2 className="mb-8 text-center text-[#5c2e3e]">Explore Other Rooms</h2>
           <div className="grid md:grid-cols-3 gap-8">
             {allRooms.filter(r => r.id !== room.id).slice(0, 3).map((otherRoom) => {
-              const slug = Object.keys(slugToRoomName).find(
-                key => slugToRoomName[key] === otherRoom.name
-              );
+              // Use slug from API, or generate from name as fallback
+              const slug = otherRoom.slug || otherRoom.name.toLowerCase().replace(/\s+/g, '-');
+              // Use images from API, fallback to hardcoded images
+              const otherRoomImage = (otherRoom.images && otherRoom.images.length > 0) 
+                ? otherRoom.images[0] 
+                : (roomDetailImages[otherRoom.id]?.[0] || otherRoom.image || '');
               
               return (
                 <a 
@@ -348,7 +409,7 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
                 >
                   <div className="relative h-48">
                     <ImageWithFallback
-                      src={roomDetailImages[otherRoom.id]?.[0] || ''}
+                      src={otherRoomImage}
                       alt={otherRoom.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />

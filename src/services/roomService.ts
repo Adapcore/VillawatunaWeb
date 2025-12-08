@@ -26,6 +26,7 @@ export interface RoomCategory {
   description?: string;
   capacity?: string;
   size?: string;
+  roomData?: Room; // Detailed room data from child room item
 }
 
 export interface RoomsPage {
@@ -92,12 +93,34 @@ export async function fetchRoomsDataFromUmbracoApi(): Promise<RoomsPage> {
     // Step 4: Process all room items and room categories
     const rooms: Room[] = [];
     const roomCategories: RoomCategory[] = [];
+    const roomsByPath: Map<string | undefined, Room> = new Map();
     
     console.log('Processing descendants:', descendantsChildren.length);
     
+    // First pass: Process room items to get detailed data
     for (const item of descendantsChildren) {
-      console.log('Processing item:', item.contentType, item.name);
+      console.log('Processing item:', item.contentType, item.name, 'Path:', item.route?.path);
       
+      if (item?.contentType === 'room' || item?.contentType === 'roomItem') {
+        const room = populateRoom(item);
+        if (room) {
+          rooms.push(room);
+          // Store by parent path for matching with category
+          const parentPath = item.route?.path?.split('/').slice(0, -1).join('/');
+          roomsByPath.set(parentPath, room);
+          console.log('  - Stored room with parent path:', parentPath);
+          console.log('  - Room data:', { 
+            name: room.name, 
+            accessories: room.accessories.length, 
+            facilities: room.facilities.length,
+            keyAmenities: room.keyAmenities?.length || 0
+          });
+        }
+      }
+    }
+    
+    // Second pass: Process room categories and match with room items
+    for (const item of descendantsChildren) {
       if (item?.contentType === 'roomCategory') {
         // Store roomCategory for mapping to rooms
         const categoryTitle = item.properties?.title || item.properties?.name || item.name || '';
@@ -127,8 +150,13 @@ export async function fetchRoomsDataFromUmbracoApi(): Promise<RoomsPage> {
         
         console.log('Found roomCategory:', categoryTitle);
         console.log('  - Properties:', item.properties);
+        console.log('  - Path:', item.route?.path);
         console.log('  - capacity value:', capacity);
         console.log('  - size value:', size);
+        
+        // Try to find matching room item
+        const matchingRoom = roomsByPath.get(item.route?.path);
+        console.log('  - Matching room found:', matchingRoom ? 'YES' : 'NO');
         
         roomCategories.push({
           id: item.id,
@@ -138,13 +166,9 @@ export async function fetchRoomsDataFromUmbracoApi(): Promise<RoomsPage> {
           mainImage: mainImageUrl,
           description: description,
           capacity: capacity,
-          size: size
+          size: size,
+          roomData: matchingRoom // Store the matching room data
         });
-      } else if (item?.contentType === 'room' || item?.contentType === 'roomItem') {
-        const room = populateRoom(item);
-        if (room) {
-          rooms.push(room);
-        }
       }
     }
     
