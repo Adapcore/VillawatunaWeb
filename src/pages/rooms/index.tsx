@@ -5,6 +5,7 @@ import { Bed, Users, Maximize2, CheckCircle, ChevronLeft, ChevronRight } from 'l
 import { fetchRoomsDataFromUmbracoApi, type Room, type RoomCategory } from '../../services/roomService';
 import Slider from 'react-slick';
 import { ImageWithFallback } from '../../components/figma/ImageWithFallback';
+import { roomsData } from '../../json/rooms';
 
 // Import room images
 import twoBedroomMain from 'figma:asset/34698d3956c98ba238415e83a94fe4015ef18c7a.png';
@@ -79,6 +80,12 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
     'economy-room': 'Economy Room',
   };
 
+  // Static accessories mapping by room name
+  const staticAccessoriesByRoomName: { [key: string]: string[] } = {};
+  roomsData.rooms.forEach((staticRoom) => {
+    staticAccessoriesByRoomName[staticRoom.name] = staticRoom.accessories || [];
+  });
+
   useEffect(() => {
     const loadRooms = async () => {
       try {
@@ -94,6 +101,100 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
         const roomsFromCategories: Room[] = (roomsPageData.roomCategories || []).map((category, index) => {
           const roomData = category.roomData;
           
+          // Only use API accessories: Category accessories first, then roomData accessories
+          // Category accessories come from roomCategory.roomAccessories (API)
+          const categoryAccessories = category.categoryAccessories || [];
+          const roomDataAccessories = roomData?.accessories || [];
+          
+          // Start with category accessories (from API), then add roomData accessories
+          const apiAccessories = [...categoryAccessories];
+          roomDataAccessories.forEach((roomAcc) => {
+            // Only add roomData accessory if it's not already in category accessories
+            const exists = categoryAccessories.some(
+              (catAcc) => catAcc.toLowerCase().trim() === roomAcc.toLowerCase().trim()
+            );
+            if (!exists) {
+              apiAccessories.push(roomAcc);
+            }
+          });
+          
+          // Only use API facilities: Category facilities first, then roomData facilities
+          // Category facilities come from roomCategory.facilitiesAmenities (API)
+          const categoryFacilities = category.categoryFacilities || [];
+          const roomDataFacilities = roomData?.facilities || [];
+          
+          // Start with category facilities (from API), then add roomData facilities
+          const apiFacilities = [...categoryFacilities];
+          roomDataFacilities.forEach((roomFac) => {
+            // Only add roomData facility if it's not already in category facilities
+            const exists = categoryFacilities.some(
+              (catFac) => catFac.toLowerCase().trim() === roomFac.toLowerCase().trim()
+            );
+            if (!exists) {
+              apiFacilities.push(roomFac);
+            }
+          });
+          
+          // Only use API keyAmenities: Category keyAmenities first, then roomData keyAmenities
+          // Category keyAmenities come from roomCategory.facilitiesAmenities where keyAmenity === true (API)
+          const categoryKeyAmenities = category.categoryKeyAmenities || [];
+          const roomDataKeyAmenities = roomData?.keyAmenities || [];
+          
+          // Start with category keyAmenities (from API), then add roomData keyAmenities
+          const apiKeyAmenities = [...categoryKeyAmenities];
+          roomDataKeyAmenities.forEach((roomKeyAmenity) => {
+            // Only add roomData keyAmenity if it's not already in category keyAmenities
+            const exists = categoryKeyAmenities.some(
+              (catKeyAmenity) => catKeyAmenity.toLowerCase().trim() === roomKeyAmenity.toLowerCase().trim()
+            );
+            if (!exists) {
+              apiKeyAmenities.push(roomKeyAmenity);
+            }
+          });
+          
+          // Only use API bedrooms: Category bedrooms first, then roomData bedrooms
+          // Category bedrooms come from roomCategory.bedrooms (API)
+          const categoryBedrooms = category.categoryBedrooms || [];
+          // Handle case where roomData.bedrooms might be undefined or not an array
+          const roomDataBedrooms = (roomData?.bedrooms && Array.isArray(roomData.bedrooms)) ? roomData.bedrooms : [];
+          
+          console.log(`Room "${category.title}" - categoryBedrooms from category:`, categoryBedrooms);
+          console.log(`Room "${category.title}" - roomDataBedrooms from roomData:`, roomDataBedrooms);
+          
+          // Start with category bedrooms (from API), then add roomData bedrooms if not already present
+          const apiBedrooms = [...categoryBedrooms];
+          if (categoryBedrooms.length === 0 && roomDataBedrooms.length > 0) {
+            // If no category bedrooms, use roomData bedrooms
+            console.log(`Room "${category.title}" - Using roomData bedrooms (no category bedrooms)`);
+            apiBedrooms.push(...roomDataBedrooms);
+          } else if (categoryBedrooms.length > 0 && roomDataBedrooms.length > 0) {
+            // If both exist, merge them (avoid duplicates by name)
+            console.log(`Room "${category.title}" - Merging category and roomData bedrooms`);
+            roomDataBedrooms.forEach((roomBedroom) => {
+              const exists = categoryBedrooms.some(
+                (catBedroom) => catBedroom.name.toLowerCase().trim() === roomBedroom.name.toLowerCase().trim()
+              );
+              if (!exists) {
+                apiBedrooms.push(roomBedroom);
+              }
+            });
+          } else if (categoryBedrooms.length > 0) {
+            console.log(`Room "${category.title}" - Using category bedrooms only`);
+          }
+          
+          console.log(`Room "${category.title}" - Category accessories:`, categoryAccessories);
+          console.log(`Room "${category.title}" - RoomData accessories:`, roomDataAccessories);
+          console.log(`Room "${category.title}" - Final API accessories:`, apiAccessories);
+          console.log(`Room "${category.title}" - Category facilities:`, categoryFacilities);
+          console.log(`Room "${category.title}" - RoomData facilities:`, roomDataFacilities);
+          console.log(`Room "${category.title}" - Final API facilities:`, apiFacilities);
+          console.log(`Room "${category.title}" - Category keyAmenities:`, categoryKeyAmenities);
+          console.log(`Room "${category.title}" - RoomData keyAmenities:`, roomDataKeyAmenities);
+          console.log(`Room "${category.title}" - Final API keyAmenities:`, apiKeyAmenities);
+          console.log(`Room "${category.title}" - Category bedrooms:`, categoryBedrooms);
+          console.log(`Room "${category.title}" - RoomData bedrooms:`, roomDataBedrooms);
+          console.log(`Room "${category.title}" - Final API bedrooms:`, apiBedrooms);
+          
           return {
             id: index + 1,
             name: category.title,
@@ -103,37 +204,71 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
             description: category.description || roomData?.description || '',
             size: category.size || roomData?.size,
             guests: category.capacity || roomData?.guests,
-            bedrooms: roomData?.bedrooms,
-            keyAmenities: roomData?.keyAmenities || [],
+            bedrooms: apiBedrooms.length > 0 ? apiBedrooms : undefined, // Use API bedrooms (category first, then roomData)
+            keyAmenities: apiKeyAmenities, // Only API keyAmenities from facilitiesAmenities where keyAmenity === true
             images: roomData?.images?.length ? roomData.images : (category.mainImage ? [category.mainImage] : []),
-            accessories: roomData?.accessories || [],
-            facilities: roomData?.facilities || [],
+            accessories: apiAccessories, // Only API accessories, no static
+            facilities: apiFacilities, // Only API facilities, no static
             slug: roomData?.slug || category.title.toLowerCase().replace(/\s+/g, '-')
           };
         });
         
-        // Combine with actual room items from API
-        const allRoomsData = [...roomsFromCategories, ...(roomsPageData.rooms || [])];
+        // Combine with actual room items from API - prioritize actual room items as they have full data
+        const allRoomsData = [...(roomsPageData.rooms || []), ...roomsFromCategories];
         
         console.log('Combined rooms data:', allRoomsData);
+        console.log('Room items from API (with full data):', roomsPageData.rooms);
         setAllRooms(allRoomsData);
         
-        // Find room by slug (preferred) or fallback to name matching
-        const foundRoom = allRoomsData.find((r: Room) => {
+        // Find room by slug - prioritize actual room items from API first (they have complete data)
+        // First, try to find in actual room items (which have full API data including accessories)
+        let foundRoom = (roomsPageData.rooms || []).find((r: Room) => {
           const roomSlugNormalized = r.slug || r.name.toLowerCase().replace(/\s+/g, '-');
-          console.log(`Comparing: "${roomSlugNormalized}" === "${roomSlug}"`);
+          console.log(`Comparing API room: "${roomSlugNormalized}" === "${roomSlug}"`);
           return roomSlugNormalized === roomSlug;
-        }) || (() => {
-          // Fallback: try matching by name using slugToRoomName mapping
+        });
+        
+        // If not found in API rooms, try in all rooms (including category-based)
+        if (!foundRoom) {
+          foundRoom = allRoomsData.find((r: Room) => {
+            const roomSlugNormalized = r.slug || r.name.toLowerCase().replace(/\s+/g, '-');
+            console.log(`Comparing all rooms: "${roomSlugNormalized}" === "${roomSlug}"`);
+            return roomSlugNormalized === roomSlug;
+          });
+        }
+        
+        // Fallback: try matching by name using slugToRoomName mapping
+        if (!foundRoom) {
           const roomName = slugToRoomName[roomSlug];
           console.log('Fallback: Looking for room name:', roomName);
-          return roomName ? allRoomsData.find((r: Room) => r.name === roomName) : undefined;
-        })();
+          if (roomName) {
+            // Try API rooms first
+            foundRoom = (roomsPageData.rooms || []).find((r: Room) => r.name === roomName);
+            // If not found, try all rooms
+            if (!foundRoom) {
+              foundRoom = allRoomsData.find((r: Room) => r.name === roomName);
+            }
+          }
+        }
         
         console.log('Found room:', foundRoom);
-        
         if (foundRoom) {
-          setRoom(foundRoom);
+          console.log('Room accessories from API:', foundRoom.accessories);
+          console.log('Room facilities from API:', foundRoom.facilities);
+          console.log('Room keyAmenities from API:', foundRoom.keyAmenities);
+          
+          // Only use API accessories, no static accessories
+          const apiAccessories = foundRoom.accessories || [];
+          
+          console.log('Final API accessories:', apiAccessories);
+          
+          // Update room with only API accessories
+          const roomWithApiAccessories = {
+            ...foundRoom,
+            accessories: apiAccessories // Only API accessories
+          };
+          
+          setRoom(roomWithApiAccessories);
         }
         setLoading(false);
       } catch (error) {
@@ -274,7 +409,11 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
                 </div>
                 <div>
                   <p className="text-gray-600">Bedrooms</p>
-                  <p className="text-gray-900">{room.bedrooms ? room.bedrooms.length : 1}</p>
+                  <p className="text-gray-900">
+                    {room.bedrooms && Array.isArray(room.bedrooms) && room.bedrooms.length > 0 
+                      ? room.bedrooms.length 
+                      : 0}
+                  </p>
                 </div>
               </div>
             </div>
@@ -294,8 +433,8 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
               </div>
             )}
 
-            {/* Accessories */}
-            {room.accessories && room.accessories.length > 0 && (
+            {/* Accessories - Only show if API has accessories */}
+            {room.accessories && Array.isArray(room.accessories) && room.accessories.length > 0 && (
               <div className="mb-8">
                 <h3 className="mb-4 text-[#5c2e3e]">Room Accessories</h3>
                 <div className="grid md:grid-cols-2 gap-3">
@@ -309,8 +448,8 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
               </div>
             )}
 
-            {/* Facilities */}
-            {room.facilities && room.facilities.length > 0 && (
+            {/* Facilities & Amenities - Only show if API has facilities */}
+            {room.facilities && Array.isArray(room.facilities) && room.facilities.length > 0 && (
               <div className="mb-8">
                 <h3 className="mb-4 text-[#5c2e3e]">Facilities & Amenities</h3>
                 <div className="grid md:grid-cols-2 gap-3">
@@ -324,8 +463,8 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
               </div>
             )}
 
-            {/* Key Amenities - Loaded from roomAccessories property */}
-            {room.keyAmenities && room.keyAmenities.length > 0 && (
+            {/* Key Amenities - Only show if API has keyAmenities (from facilitiesAmenities where keyAmenity === true) */}
+            {room.keyAmenities && Array.isArray(room.keyAmenities) && room.keyAmenities.length > 0 && (
               <div className="mb-8">
                 <h3 className="mb-4 text-[#5c2e3e]">Key Amenities</h3>
                 <div className="flex flex-wrap gap-3">
