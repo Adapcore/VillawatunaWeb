@@ -141,6 +141,25 @@ export default function RoomsListPage() {
                 keyAmenities: []
               };
               
+              // Get accessories from API: Category accessories first, then roomData accessories
+              const categoryAccessories = category.categoryAccessories || [];
+              const roomDataAccessories = category.roomData?.accessories || [];
+              
+              // Start with category accessories (from API), then add roomData accessories
+              const apiAccessories = [...categoryAccessories];
+              roomDataAccessories.forEach((roomAcc) => {
+                // Only add roomData accessory if it's not already in category accessories
+                const exists = categoryAccessories.some(
+                  (catAcc) => catAcc.toLowerCase().trim() === roomAcc.toLowerCase().trim()
+                );
+                if (!exists) {
+                  apiAccessories.push(roomAcc);
+                }
+              });
+              
+              // Get top 3 accessories
+              const top3Accessories = apiAccessories.slice(0, 3);
+              
               return (
                 <div
                   key={category.id || index}
@@ -186,21 +205,21 @@ export default function RoomsListPage() {
                   </div>
                 </div>
 
-                    {/* Key Amenities */}
-                    {room.keyAmenities && room.keyAmenities.length > 0 && (
-                      <div className="mb-6">
+                    {/* Room Accessories - Top 3 from API */}
+                    {top3Accessories.length > 0 && (
+                      <div className="mb-6 Accessories">
                         <div className="flex flex-wrap gap-2">
-                          {room.keyAmenities.slice(0, 3).map((amenity, amenityIndex) => (
+                          {top3Accessories.map((accessory, accessoryIndex) => (
                             <span
-                              key={amenityIndex}
+                              key={accessoryIndex}
                               className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full"
                             >
-                              {amenity}
+                              {accessory}
                             </span>
                           ))}
-                          {room.keyAmenities.length > 3 && (
+                          {apiAccessories.length > 3 && (
                             <span className="text-xs text-gray-500 px-3 py-1">
-                              +{room.keyAmenities.length - 3} more
+                              +{apiAccessories.length - 3} more
                             </span>
                           )}
                         </div>
@@ -258,21 +277,21 @@ export default function RoomsListPage() {
                     </div>
                   </div>
 
-                  {/* Key Amenities */}
-                  {room.keyAmenities && room.keyAmenities.length > 0 && (
-                    <div className="mb-6">
+                  {/* Room Accessories - Top 3 from API */}
+                  {room.accessories && Array.isArray(room.accessories) && room.accessories.length > 0 && (
+                    <div className="mb-6 Accessories">
                       <div className="flex flex-wrap gap-2">
-                        {room.keyAmenities.slice(0, 3).map((amenity, index) => (
+                        {room.accessories.slice(0, 3).map((accessory, index) => (
                           <span
                             key={index}
                             className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full"
                           >
-                            {amenity}
+                            {accessory}
                           </span>
                         ))}
-                        {room.keyAmenities.length > 3 && (
+                        {room.accessories.length > 3 && (
                           <span className="text-xs text-gray-500 px-3 py-1">
-                            +{room.keyAmenities.length - 3} more
+                            +{room.accessories.length - 3} more
                           </span>
                         )}
                       </div>
