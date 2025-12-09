@@ -79,7 +79,7 @@ export default function RoomDetailPage({ roomSlug }: RoomDetailPageProps) {
     'economy-room': 'Economy Room',
   };
 
-   nbhuseEffect(() => {
+  useEffect(() => {
     const loadRooms = async () => {
       try {
         // Load rooms from Umbraco API
