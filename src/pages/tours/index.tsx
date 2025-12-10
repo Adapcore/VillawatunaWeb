@@ -3,18 +3,7 @@ import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
 import { TourCard } from '../../components/TourCard';
 import { TourModal } from '../../components/TourModal';
-import { fetchToursDataFromUmbracoApi } from '../../services/tourService';
-
-interface Tour {
-    id: number;
-    name: string;
-    price: number;
-    duration: string;
-    description: string;
-    highlights: string[];
-    includes: string[];
-    difficulty: string;
-}
+import { fetchToursDataFromUmbracoApi, type Tour } from '../../services/tourService';
 
 export default function ToursPage() {
     const [tours, setTours] = useState<Tour[]>([]);
@@ -25,6 +14,7 @@ export default function ToursPage() {
     const [pageSubHeader, setPageSubHeader] = useState<string>('');
     const [pageSubDescription, setPageSubDescription] = useState<string>('');
     const [bookingInformation, setBookingInformation] = useState<string>('');
+    const [bannerImage, setBannerImage] = useState<string>('');
 
     useEffect(() => {
         const loadTours = async () => {
@@ -40,6 +30,7 @@ export default function ToursPage() {
                 setPageSubHeader(toursPageData.subTitle || '');
                 setPageSubDescription(toursPageData.subDescription || '');
                 setBookingInformation(toursPageData.bookingInformation || '');
+                setBannerImage(toursPageData.bannerImage || '');
 
                 // Set tours from API only (empty array if not available)
                 setTours(toursPageData.tours || []);
@@ -51,6 +42,7 @@ export default function ToursPage() {
                 setPageSubHeader('');
                 setPageSubDescription('');
                 setBookingInformation('');
+                setBannerImage('');
                 setTours([]);
             }
         };
@@ -60,8 +52,22 @@ export default function ToursPage() {
 
 
     const handleTourClick = (tour: Tour) => {
+        console.log('Tour clicked:', tour);
+        console.log('Tour name:', tour.name);
+        console.log('Tour has name?', !!tour.name);
+        console.log('Tour name type:', typeof tour.name);
+        console.log('Tour name value:', tour.name);
+        console.log('Tour data:', JSON.stringify(tour, null, 2));
+        
+        // Validate tour before setting
+        if (!tour || (tour.name === null || tour.name === undefined)) {
+            console.error('Invalid tour - cannot open modal:', tour);
+            return;
+        }
+        
         setSelectedTour(tour);
         setIsModalOpen(true);
+        console.log('Modal should open, isOpen:', true, 'selectedTour:', tour);
     };
 
     return (
@@ -70,16 +76,18 @@ export default function ToursPage() {
 
             {/* Hero Section */}
             <div className="relative h-[400px] flex items-center justify-center">
-                <div
-                    className="absolute inset-0 bg-cover bg-center"
-                    style={{
-                        backgroundImage: 'url(https://images.unsplash.com/photo-1488646953014-85cb44e25828?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080)',
-                    }}
-                >
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/60"></div>
-                </div>
+                {bannerImage && (
+                    <div
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{
+                            backgroundImage: `url(${bannerImage})`,
+                        }}
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/60"></div>
+                    </div>
+                )}
 
-                <div className="relative z-10 text-center text-white px-4">
+                <div className={`relative z-10 text-center px-4 ${bannerImage ? 'text-white' : 'text-gray-900'}`}>
                     <h1 className="mb-4 header">{pageHeader}</h1>
                     <p className="max-w-2xl mx-auto description">
                         {pageDescription}
@@ -102,9 +110,10 @@ export default function ToursPage() {
                             key={tour.id}
                             name={tour.name}
                             price={tour.price}
+                            priceTitle={tour.priceTitle}
                             duration={tour.duration}
                             description={tour.description}
-                            difficulty={tour.difficulty}
+                            difficultyLevel={tour.difficultyLevel}
                             image={tour.image || ''}
                             onClick={() => handleTourClick(tour)}
                         />
